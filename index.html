@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>장수대학 평생교육 프로그램 사진 관리</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <!-- JSZip & FileSaver -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    .hide-scrollbar::-webkit-scrollbar { display: none; }
+    .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen pb-10">
+
+  <!-- Toast Notification -->
+  <div id="toast" class="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-slate-900/90 text-white text-xs px-4 py-2.5 rounded-full shadow-lg flex items-center gap-2 transition-all duration-300 opacity-0 pointer-events-none">
+    <i id="toast-icon" class="fa-solid fa-spinner fa-spin text-emerald-400"></i>
+    <span id="toast-msg">처리 중...</span>
+  </div>
+
+  <!-- Header -->
+  <header class="bg-indigo-700 text-white sticky top-0 z-30 shadow-md">
+    <div class="max-w-md mx-auto px-4 py-3 flex items-center justify-between">
+      <div>
+        <h1 class="font-bold text-lg flex items-center gap-2">
+          <i class="fa-solid fa-camera"></i> 장수대학 수업사진 관리
+        </h1>
+        <div class="flex items-center gap-2 mt-0.5">
+          <span class="text-xs text-indigo-200" id="current-month-badge">26년 하반기</span>
+          <span class="bg-emerald-500/30 border border-emerald-400/50 text-emerald-200 text-[10px] px-1.5 py-0.2 rounded font-semibold flex items-center gap-1">
+            <i class="fa-solid fa-users"></i> 실시간 공유 중
+          </span>
+        </div>
+      </div>
+      
+      <!-- Integrated Settings / Menu Button -->
+      <button id="open-menu-btn" class="bg-indigo-800 hover:bg-indigo-900 border border-indigo-500 text-white text-xs font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition">
+        <i class="fa-solid fa-bars"></i> 메뉴
+      </button>
+    </div>
+
+    <!-- Archive Banner -->
+    <div id="archive-banner" class="bg-amber-500 text-slate-900 px-4 py-1.5 text-xs font-bold text-center hidden flex items-center justify-center gap-2">
+      <i class="fa-solid fa-box-archive"></i>
+      <span>[지난달 보관함]을 조회 중입니다.</span>
+    </div>
+
+    <!-- Progress Bar -->
+    <div id="progress-container" class="max-w-md mx-auto px-4 pb-3 pt-1">
+      <div class="flex justify-between text-xs font-semibold mb-1">
+        <span id="progress-text">필수 촬영 진행: 0 / 69 (0%)</span>
+        <span id="optional-count-badge" class="text-[10px] text-indigo-200 font-normal">선택 0개 완료</span>
+      </div>
+      <div class="w-full bg-indigo-900 rounded-full h-2 rounded-full overflow-hidden">
+        <div id="progress-bar" class="bg-emerald-400 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+      </div>
+    </div>
+
+    <!-- Day Filter Tabs -->
+    <div class="max-w-md mx-auto px-4 flex gap-2 overflow-x-auto hide-scrollbar pb-3">
+      <button class="day-tab active-tab bg-white text-indigo-700 font-bold px-4 py-1.5 rounded-full text-xs shadow shrink-0" data-day="전체">전체</button>
+      <button class="day-tab bg-indigo-600/70 text-white font-medium px-4 py-1.5 rounded-full text-xs shrink-0" data-day="월">월요일</button>
+      <button class="day-tab bg-indigo-600/70 text-white font-medium px-4 py-1.5 rounded-full text-xs shrink-0" data-day="화">화요일</button>
+      <button class="day-tab bg-indigo-600/70 text-white font-medium px-4 py-1.5 rounded-full text-xs shrink-0" data-day="수">수요일</button>
+      <button class="day-tab bg-indigo-600/70 text-white font-medium px-4 py-1.5 rounded-full text-xs shrink-0" data-day="목">목요일</button>
+      <button class="day-tab bg-indigo-600/70 text-white font-medium px-4 py-1.5 rounded-full text-xs shrink-0" data-day="금">금요일</button>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="max-w-md mx-auto px-4 pt-4">
+
+    <!-- Search & Filter Bar -->
+    <div class="mb-3 flex gap-2">
+      <div class="relative flex-1">
+        <i class="fa-solid fa-magnifying-glass absolute left-3 top-3 text-slate-400 text-sm"></i>
+        <input type="text" id="search-input" placeholder="수업명 또는 장소 검색..." class="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm">
+      </div>
+      <select id="status-filter" class="bg-white border border-slate-200 text-sm rounded-xl px-2 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm">
+        <option value="all">전체 상태</option>
+        <option value="pending">필수 미완료만</option>
+        <option value="done">완료만</option>
+        <option value="optional">선택사항(기타)</option>
+      </select>
+    </div>
+
+    <!-- Info Banner for Order -->
+    <div class="mb-3 text-[11px] text-slate-500 flex items-center justify-between px-1">
+      <span><i class="fa-solid fa-arrow-down-short-wide text-indigo-500 mr-1"></i>시간순 ➔ 낮은 층수순 정렬됨</span>
+      <span class="text-slate-400">(지하1층 ➔ 서예실(1층) ➔ 2층 ➔ 3층)</span>
+    </div>
+
+    <!-- Cards Container -->
+    <div id="cards-container" class="space-y-3"></div>
+  </main>
+
+  <!-- Hidden Upload Inputs -->
+  <input type="file" id="camera-input" accept="image/*" capture="environment" class="hidden">
+  <input type="file" id="gallery-input" accept="image/*" class="hidden">
+
+  <!-- Modal 1: Photo Upload Type Selection Sheet -->
+  <div id="upload-type-modal" class="fixed inset-0 bg-black/60 z-50 flex items-end justify-center hidden backdrop-blur-xs">
+    <div class="bg-white rounded-t-3xl w-full max-w-md p-5 space-y-3">
+      <div class="flex justify-between items-center border-b pb-3">
+        <h3 class="font-bold text-slate-800 text-base">사진 등록 방식 선택</h3>
+        <button onclick="closeUploadTypeModal()" class="text-slate-400 text-lg"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="grid grid-cols-2 gap-3 pt-1">
+        <button id="choose-camera-btn" class="py-4 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-2xl flex flex-col items-center gap-2 text-indigo-700 font-bold transition">
+          <i class="fa-solid fa-camera text-2xl"></i>
+          <span class="text-xs">카메라로 바로 촬영</span>
+        </button>
+        <button id="choose-gallery-btn" class="py-4 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-2xl flex flex-col items-center gap-2 text-emerald-700 font-bold transition">
+          <i class="fa-solid fa-images text-2xl"></i>
+          <span class="text-xs">갤러리/앨범에서 선택</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 2: Menu / Actions Modal -->
+  <div id="menu-modal" class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 hidden backdrop-blur-xs">
+    <div class="bg-white rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl flex flex-col">
+      <div class="p-4 bg-indigo-700 text-white flex justify-between items-center">
+        <h3 class="font-bold text-base flex items-center gap-2">
+          <i class="fa-solid fa-sliders"></i> 관리 및 다운로드 메뉴
+        </h3>
+        <button id="menu-close-btn" class="text-white/80 hover:text-white text-lg p-1">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+      
+      <div class="p-4 space-y-3">
+        <!-- Download ZIP -->
+        <button id="menu-download-btn" class="w-full py-3.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-2xl text-sm shadow flex items-center justify-between transition">
+          <span class="flex items-center gap-2"><i class="fa-solid fa-file-zipper text-lg"></i> <span id="menu-zip-label">이번 달 사진 전체 ZIP 다운로드</span></span>
+          <i class="fa-solid fa-chevron-right text-xs opacity-70"></i>
+        </button>
+
+        <!-- Sync -->
+        <button id="menu-sync-btn" class="w-full py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-2xl text-xs flex items-center justify-between transition">
+          <span class="flex items-center gap-2"><i class="fa-solid fa-rotate text-indigo-600"></i> 구글 드라이브 수동 동기화</span>
+          <i class="fa-solid fa-chevron-right text-xs opacity-50"></i>
+        </button>
+
+        <!-- Archive Toggle -->
+        <button id="menu-archive-btn" class="w-full py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-2xl text-xs flex items-center justify-between transition">
+          <span class="flex items-center gap-2"><i class="fa-solid fa-box-archive text-amber-600"></i> <span id="menu-archive-label">지난달 보관함 보기</span></span>
+          <i class="fa-solid fa-chevron-right text-xs opacity-50"></i>
+        </button>
+
+        <!-- Reset -->
+        <button id="menu-reset-btn" class="w-full py-2.5 px-4 bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold rounded-2xl text-xs flex items-center justify-between transition border border-rose-100">
+          <span class="flex items-center gap-2"><i class="fa-solid fa-trash-can"></i> 이번 달 사진 전체 리셋</span>
+          <i class="fa-solid fa-triangle-exclamation text-xs opacity-70"></i>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 3: Photo Preview Modal -->
+  <div id="photo-modal" class="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 hidden backdrop-blur-sm">
+    <div class="bg-white rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl flex flex-col">
+      <div class="p-4 bg-slate-900 text-white flex justify-between items-center">
+        <div>
+          <h4 id="modal-title" class="font-bold text-sm">수업 정보</h4>
+          <p id="modal-date" class="text-xs text-slate-400 font-mono">촬영 및 동기화 상태</p>
+        </div>
+        <button id="modal-close-btn" class="text-slate-400 hover:text-white text-lg p-1">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <div class="relative bg-slate-950 flex items-center justify-center min-h-[240px] max-h-[60vh] overflow-hidden">
+        <img id="modal-img" src="" alt="등록 사진 미리보기" class="max-w-full max-h-[55vh] object-contain">
+      </div>
+
+      <div class="p-4 bg-white border-t border-slate-100 flex gap-2">
+        <button id="modal-retake-btn" class="flex-1 py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 border border-indigo-200">
+          <i class="fa-solid fa-camera"></i> 다시 등록하기
+        </button>
+        <button id="modal-delete-btn" class="py-2.5 px-4 bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold rounded-xl text-xs flex items-center justify-center gap-1 border border-rose-200">
+          <i class="fa-solid fa-trash-can"></i> 삭제
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const GAS_URL = "https://script.google.com/macros/s/AKfycbxygU29LXJTOb_A1z7YpGD1IOd25zWBsDOiOf51P9jzNayvJuk-KG2Ejv_9ItJILRi8EA/exec";
+
+    const rawData = [
+      { id: "P001", location: "3층큰마당", day: "월", time: "10:30~11:30", name: "교양·건강강좌", isOptional: true },
+      { id: "P002", location: "3층큰마당", day: "월", time: "13:00~13:50", name: "레크레이션" },
+      { id: "P003", location: "3층큰마당", day: "월", time: "14:00~14:50", name: "시니어 힐링댄스" },
+      { id: "P004", location: "3층큰마당", day: "월", time: "15:00~15:50", name: "국선도 초급" },
+      { id: "P005", location: "3층큰마당", day: "화", time: "09:30~09:50", name: "건강 스트레칭", isOptional: true },
+      { id: "P006", location: "3층큰마당", day: "화", time: "10:00~10:50", name: "생활태권체조(기초)" },
+      { id: "P007", location: "3층큰마당", day: "화", time: "11:00~11:50", name: "웃음건강체조" },
+      { id: "P008", location: "3층큰마당", day: "화", time: "13:00~13:50", name: "시니어트롯핏" },
+      { id: "P009", location: "3층큰마당", day: "화", time: "14:00~14:50", name: "국학기공체조" },
+      { id: "P010", location: "3층큰마당", day: "화", time: "15:00~15:50", name: "생활요가" },
+      { id: "P011", location: "3층큰마당", day: "수", time: "09:30~09:50", name: "건강 스트레칭", isOptional: true },
+      { id: "P012", location: "3층큰마당", day: "수", time: "10:00~10:50", name: "생활태권체조(초급)" },
+      { id: "P013", location: "3층큰마당", day: "수", time: "11:00~11:50", name: "요가교실" },
+      { id: "P014", location: "3층큰마당", day: "수", time: "13:00~13:50", name: "신바람댄스" },
+      { id: "P015", location: "3층큰마당", day: "수", time: "14:00~14:50", name: "힐링송" },
+      { id: "P016", location: "3층큰마당", day: "수", time: "15:00~15:50", name: "백세체조" },
+      { id: "P017", location: "3층큰마당", day: "목", time: "09:30~09:50", name: "건강 스트레칭", isOptional: true },
+      { id: "P018", location: "3층큰마당", day: "목", time: "10:00~10:50", name: "생활근력체조" },
+      { id: "P019", location: "3층큰마당", day: "목", time: "11:00~11:50", name: "라인댄스" },
+      { id: "P020", location: "3층큰마당", day: "목", time: "13:00~13:20", name: "오후 조회", isOptional: true },
+      { id: "P021", location: "3층큰마당", day: "목", time: "13:25~15:00", name: "하하하송" },
+      { id: "P022", location: "3층큰마당", day: "목", time: "15:00~15:50", name: "백하세요가" },
+      { id: "P023", location: "3층큰마당", day: "금", time: "10:00~10:50", name: "단전호흡" },
+      { id: "P024", location: "3층큰마당", day: "금", time: "11:00~11:50", name: "웰빙 에어로빅" },
+      { id: "P025", location: "3층큰마당", day: "금", time: "13:00~13:50", name: "줌바댄스" },
+      { id: "P026", location: "3층큰마당", day: "금", time: "14:00~14:50", name: "한국무용" },
+      { id: "P027", location: "3층큰마당", day: "금", time: "15:00~15:50", name: "백세댄스" },
+      { id: "P028", location: "3층초록배움터1", day: "목", time: "10:00~12:00", name: "그림책이야기" },
+      { id: "P029", location: "3층초록배움터2", day: "화", time: "10:00~11:30", name: "영어 기초A" },
+      { id: "P030", location: "3층초록배움터2", day: "수", time: "10:00~12:00", name: "시니어 주산(중급)" },
+      { id: "P031", location: "3층초록배움터2", day: "수", time: "13:00~15:00", name: "시니어 주산(초급)" },
+      { id: "P032", location: "3층초록배움터2", day: "목", time: "10:00~11:30", name: "영어 기초B" },
+      { id: "P033", location: "3층초록배움터2", day: "목", time: "13:00~14:10", name: "하모니카(초)" },
+      { id: "P034", location: "3층초록배움터2", day: "목", time: "14:10~15:30", name: "하모니카(중)" },
+      { id: "P035", location: "3층초록배움터2", day: "금", time: "10:00~12:00", name: "오카리나(초급)" },
+      { id: "P036", location: "2층빨강배움터1", day: "월", time: "09:00~12:00", name: "문해2단계" },
+      { id: "P037", location: "2층빨강배움터1", day: "월", time: "13:00~15:00", name: "오카리나(중급)" },
+      { id: "P038", location: "2층빨강배움터1", day: "화", time: "09:30~11:30", name: "문해1단계" },
+      { id: "P039", location: "2층빨강배움터1", day: "수", time: "09:00~12:00", name: "문해2단계" },
+      { id: "P040", location: "2층빨강배움터1", day: "수", time: "13:00~14:20", name: "캐리커처(중급)" },
+      { id: "P041", location: "2층빨강배움터1", day: "수", time: "14:30~16:00", name: "캐리커처(초급)" },
+      { id: "P042", location: "2층빨강배움터1", day: "목", time: "09:30~11:30", name: "문해1단계" },
+      { id: "P043", location: "2층빨강배움터1", day: "목", time: "13:00~14:00", name: "중국어(초급)" },
+      { id: "P044", location: "2층빨강배움터1", day: "목", time: "14:00~15:00", name: "중국어(중급)" },
+      { id: "P045", location: "2층빨강배움터1", day: "금", time: "09:00~12:00", name: "문해2단계" },
+      { id: "P046", location: "2층빨강배움터2", day: "월", time: "13:00~15:00", name: "시니어글쓰기" },
+      { id: "P047", location: "2층빨강배움터2", day: "화", time: "10:00~11:30", name: "미술교실(중급)" },
+      { id: "P048", location: "2층빨강배움터2", day: "화", time: "13:00~14:30", name: "미술교실(초급)" },
+      { id: "P049", location: "2층빨강배움터2", day: "수", time: "11:00~12:00", name: "영어회화(기초)" },
+      { id: "P050", location: "2층빨강배움터2", day: "수", time: "13:00~14:00", name: "영어회화(초급)" },
+      { id: "P051", location: "2층빨강배움터2", day: "수", time: "14:00~15:00", name: "영어회화(중급)" },
+      { id: "P052", location: "2층빨강배움터2", day: "금", time: "09:30~11:30", name: "캘리그라피 중급" },
+      { id: "P053", location: "2층빨강배움터2", day: "금", time: "13:00~15:00", name: "캘리그라피 초급" },
+      { id: "P054", location: "2층빨강배움터3", day: "월", time: "10:00~11:00", name: "우쿨렐레(초급)" },
+      { id: "P055", location: "2층빨강배움터3", day: "월", time: "11:00~12:00", name: "우쿨렐레(중급)" },
+      { id: "P056", location: "2층빨강배움터3", day: "목", time: "13:00~14:00", name: "한문(동양고전)" },
+      { id: "P057", location: "2층빨강배움터3", day: "금", time: "11:00~12:00", name: "일본어(기초)" },
+      { id: "P058", location: "2층빨강배움터3", day: "금", time: "13:00~14:00", name: "일본어(초급)" },
+      { id: "P059", location: "2층빨강배움터3", day: "금", time: "14:00~15:00", name: "일본어(중급)" },
+      { id: "P060", location: "서예실", day: "월", time: "10:00~12:00", name: "사군자" },
+      { id: "P061", location: "서예실", day: "화", time: "10:00~12:00", name: "한글서예(중급)" },
+      { id: "P062", location: "서예실", day: "화", time: "13:00~15:00", name: "한글서예(초급)" },
+      { id: "P063", location: "지하1층작은마당", day: "화", time: "15:00~16:00", name: "국선도 중급" },
+      { id: "P064", location: "서예실", day: "수", time: "10:00~12:00", name: "한국화" },
+      { id: "P065", location: "서예실", day: "목", time: "10:00~12:00", name: "서예 중급" },
+      { id: "P066", location: "서예실", day: "금", time: "10:00~12:00", name: "서예 초급" },
+      { id: "P067", location: "지하1층작은마당", day: "월", time: "13:00~14:00", name: "가락장구(중)" },
+      { id: "P068", location: "지하1층작은마당", day: "월", time: "14:00~15:00", name: "민요교실" },
+      { id: "P069", location: "지하1층작은마당", day: "월", time: "15:00~16:00", name: "가락장구(초)" },
+      { id: "P070", location: "지하1층작은마당", day: "화", time: "13:00~15:00", name: "장수풍물(동아리)" },
+      { id: "P071", location: "지하1층작은마당", day: "수", time: "13:00~15:00", name: "청춘 실버악단(동아리)" },
+      { id: "P072", location: "지하1층작은마당", day: "금", time: "13:00~14:00", name: "퓨전난타(초급)" },
+      { id: "P073", location: "지하1층작은마당", day: "금", time: "14:00~15:00", name: "퓨전난타(중급)" },
+      { id: "P074", location: "지하1층작은마당", day: "금", time: "15:00~17:00", name: "난타공연반" }
+    ];
+
+    function getFloorLevel(location) {
+      if (location.includes("지하1층")) return -1;
+      if (location.includes("서예실") || location.includes("1층")) return 1;
+      if (location.includes("2층")) return 2;
+      if (location.includes("3층")) return 3;
+      return 99;
+    }
+
+    function getStartMinutes(timeStr) {
+      const start = timeStr.split('~')[0].trim();
+      const [h, m] = start.split(':').map(Number);
+      return (h * 60) + (m || 0);
+    }
+
+    let db;
+    let isArchiveView = false;
+
+    const dbRequest = indexedDB.open("TimetableAppDB_MultiSync", 3);
+    dbRequest.onupgradeneeded = (e) => {
+      db = e.target.result;
+      if (!db.objectStoreNames.contains("photos")) db.createObjectStore("photos", { keyPath: "id" });
+      if (!db.objectStoreNames.contains("archive_photos")) db.createObjectStore("archive_photos", { keyPath: "id" });
+      if (!db.objectStoreNames.contains("meta")) db.createObjectStore("meta", { keyPath: "key" });
+    };
+
+    dbRequest.onsuccess = async (e) => {
+      db = e.target.result;
+      await checkAndAutoArchiveMonthly();
+      await fetchRemoteDrivePhotos();
+      renderApp();
+    };
+
+    async function checkAndAutoArchiveMonthly() {
+      const now = new Date();
+      const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      const savedMonthObj = await getMetaDB("currentMonth");
+      const savedMonth = savedMonthObj ? savedMonthObj.value : null;
+
+      if (savedMonth && savedMonth !== currentMonthKey) {
+        const currentPhotos = await getAllDB("photos");
+        await clearDB("archive_photos");
+        for (const item of currentPhotos) {
+          await putDB("archive_photos", { ...item, archiveMonth: savedMonth });
+        }
+        await clearDB("photos");
+        await putDB("meta", { key: "currentMonth", value: currentMonthKey });
+        showToast(`🎉 새로운 달(${now.getMonth()+1}월) 촬영이 시작되었습니다.`);
+      } else if (!savedMonth) {
+        await putDB("meta", { key: "currentMonth", value: currentMonthKey });
+      }
+      document.getElementById('current-month-badge').innerText = `${now.getMonth()+1}월 촬영 중`;
+    }
+
+    async function fetchRemoteDrivePhotos() {
+      try {
+        showToast("구글 드라이브 동기화 중...");
+        const res = await fetch(GAS_URL);
+        if (!res.ok) throw new Error("서버 응답 오류");
+        const fileList = await res.json();
+
+        if (Array.isArray(fileList)) {
+          for (const file of fileList) {
+            const info = rawData.find(d => file.name.includes(`${d.day}요일`) && file.name.includes(d.name));
+            if (info) {
+              const pid = info.id;
+              const dateStr = new Date(file.created).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+              const driveImgUrl = `https://lh3.googleusercontent.com/d/${file.id}`;
+
+              const existing = await getPhotoDB("photos", pid);
+              if (!existing) {
+                await putDB("photos", { id: pid, dataUrl: driveImgUrl, dateStr, driveId: file.id });
+              }
+            }
+          }
+        }
+        showToast("동기화 완료!", false);
+      } catch (err) {
+        console.warn("구글 드라이브 동기화 참고:", err);
+      }
+    }
+
+    function showToast(msg, isLoading = true) {
+      const toast = document.getElementById('toast');
+      const icon = document.getElementById('toast-icon');
+      const text = document.getElementById('toast-msg');
+      text.innerText = msg;
+      if (isLoading) {
+        icon.className = "fa-solid fa-spinner fa-spin text-emerald-400";
+      } else {
+        icon.className = "fa-solid fa-circle-check text-emerald-400";
+      }
+      toast.classList.remove('opacity-0', 'pointer-events-none');
+      setTimeout(() => {
+        toast.classList.add('opacity-0', 'pointer-events-none');
+      }, 2500);
+    }
+
+    function compressImageFile(file, maxWidth = 1280, quality = 0.75) {
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const img = new Image();
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            let width = img.width;
+            let height = img.height;
+            if (width > maxWidth) {
+              height = Math.round((height * maxWidth) / width);
+              width = maxWidth;
+            }
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+            resolve(canvas.toDataURL('image/jpeg', quality));
+          };
+          img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    function getMetaDB(key) {
+      return new Promise((resolve) => {
+        const tx = db.transaction("meta", "readonly");
+        const req = tx.objectStore("meta").get(key);
+        req.onsuccess = () => resolve(req.result);
+      });
+    }
+
+    function getPhotoDB(storeName, id) {
+      return new Promise((resolve) => {
+        const tx = db.transaction(storeName, "readonly");
+        const req = tx.objectStore(storeName).get(id);
+        req.onsuccess = () => resolve(req.result);
+      });
+    }
+
+    function putDB(storeName, item) {
+      return new Promise((resolve) => {
+        const tx = db.transaction(storeName, "readwrite");
+        tx.objectStore(storeName).put(item);
+        tx.oncomplete = () => resolve();
+      });
+    }
+
+    function getAllDB(storeName) {
+      return new Promise((resolve) => {
+        const tx = db.transaction(storeName, "readonly");
+        const req = tx.objectStore(storeName).getAll();
+        req.onsuccess = () => resolve(req.result || []);
+      });
+    }
+
+    function deleteDB(storeName, id) {
+      return new Promise((resolve) => {
+        const tx = db.transaction(storeName, "readwrite");
+        tx.objectStore(storeName).delete(id);
+        tx.oncomplete = () => resolve();
+      });
+    }
+
+    function clearDB(storeName) {
+      return new Promise((resolve) => {
+        const tx = db.transaction(storeName, "readwrite");
+        tx.objectStore(storeName).clear();
+        tx.oncomplete = () => resolve();
+      });
+    }
+
+    let activeDay = "전체";
+    let activeTargetId = null;
+
+    async function renderApp() {
+      const activeStore = isArchiveView ? "archive_photos" : "photos";
+      const photosList = await getAllDB(activeStore);
+      const photoMap = new Map(photosList.map(item => [item.id, item]));
+
+      const mandatoryItems = rawData.filter(d => !d.isOptional);
+      const mandatoryTotal = mandatoryItems.length;
+      const mandatoryCompleted = mandatoryItems.filter(d => photoMap.has(d.id)).length;
+      const optionalCompleted = rawData.filter(d => d.isOptional && photoMap.has(d.id)).length;
+
+      const percent = Math.round((mandatoryCompleted / mandatoryTotal) * 100);
+
+      document.getElementById('progress-text').innerText = `필수 촬영 진행: ${mandatoryCompleted} / ${mandatoryTotal} (${percent}%)`;
+      document.getElementById('optional-count-badge').innerText = `선택 ${optionalCompleted}개 완료`;
+      document.getElementById('progress-bar').style.width = `${percent}%`;
+
+      const searchTerm = document.getElementById('search-input').value.trim().toLowerCase();
+      const statusFilter = document.getElementById('status-filter').value;
+
+      let filtered = rawData.filter(item => {
+        const matchDay = (activeDay === "전체" || item.day === activeDay);
+        const matchSearch = item.name.toLowerCase().includes(searchTerm) || item.location.toLowerCase().includes(searchTerm);
+        const isDone = photoMap.has(item.id);
+        
+        let matchStatus = true;
+        if (statusFilter === "pending") {
+          matchStatus = !isDone && !item.isOptional;
+        } else if (statusFilter === "done") {
+          matchStatus = isDone;
+        } else if (statusFilter === "optional") {
+          matchStatus = item.isOptional;
+        }
+
+        return matchDay && matchSearch && matchStatus;
+      });
+
+      filtered.sort((a, b) => {
+        const timeA = getStartMinutes(a.time);
+        const timeB = getStartMinutes(b.time);
+        if (timeA !== timeB) return timeA - timeB;
+
+        const floorA = getFloorLevel(a.location);
+        const floorB = getFloorLevel(b.location);
+        if (floorA !== floorB) return floorA - floorB;
+
+        return a.location.localeCompare(b.location);
+      });
+
+      const container = document.getElementById('cards-container');
+      container.innerHTML = '';
+
+      if (filtered.length === 0) {
+        container.innerHTML = `
+          <div class="bg-white rounded-2xl p-8 text-center text-slate-400">
+            <i class="fa-solid fa-folder-open text-4xl mb-2 text-slate-300"></i>
+            <p class="text-sm">조건에 맞는 수업이 없습니다.</p>
+          </div>
+        `;
+        return;
+      }
+
+      filtered.forEach(item => {
+        const photoData = photoMap.get(item.id);
+        const isCompleted = !!photoData;
+
+        const card = document.createElement('div');
+        card.className = `bg-white rounded-2xl p-4 shadow-sm border transition-all ${isCompleted ? 'border-emerald-300 bg-emerald-50/20' : (item.isOptional ? 'border-slate-200 bg-slate-50/40' : 'border-slate-200')}`;
+
+        card.innerHTML = `
+          <div class="flex items-start justify-between gap-2 mb-2">
+            <div>
+              <div class="flex items-center gap-1.5 mb-1">
+                <span class="bg-indigo-100 text-indigo-700 font-bold px-2 py-0.5 rounded text-xs">${item.day}요일</span>
+                <span class="bg-slate-100 text-slate-700 font-bold px-2 py-0.5 rounded text-xs font-mono"><i class="fa-regular fa-clock text-indigo-500 mr-1"></i>${item.time}</span>
+                ${item.isOptional ? `<span class="bg-slate-200 text-slate-600 px-1.5 py-0.2 rounded text-[10px] font-semibold">선택(기타)</span>` : ''}
+              </div>
+              <h3 class="font-bold text-slate-800 text-base leading-snug">${item.name}</h3>
+              <p class="text-xs text-slate-500 flex items-center gap-1 mt-0.5">
+                <i class="fa-solid fa-location-dot text-indigo-400"></i> ${item.location}
+              </p>
+            </div>
+            <div>
+              ${isCompleted 
+                ? `<span class="inline-flex items-center gap-1 bg-emerald-100 text-emerald-700 px-2.5 py-1 rounded-full text-xs font-bold shrink-0"><i class="fa-solid fa-circle-check"></i> 완료</span>`
+                : (item.isOptional 
+                    ? `<span class="inline-flex items-center gap-1 bg-slate-100 text-slate-400 px-2.5 py-1 rounded-full text-xs shrink-0"><i class="fa-solid fa-circle-minus"></i> 선택사항</span>`
+                    : `<span class="inline-flex items-center gap-1 bg-slate-100 text-slate-500 px-2.5 py-1 rounded-full text-xs shrink-0"><i class="fa-regular fa-clock"></i> 미완료</span>`)}
+            </div>
+          </div>
+
+          ${isCompleted ? `
+            <div class="mt-3 relative rounded-xl overflow-hidden border border-slate-300 bg-slate-900 aspect-video group cursor-pointer shadow-inner" onclick="openPhotoModal('${item.id}')">
+              <img src="${photoData.dataUrl}" alt="${item.name}" class="w-full h-full object-cover">
+              
+              <div class="absolute inset-0 bg-black/30 group-hover:bg-black/40 transition flex flex-col justify-between p-3 text-white">
+                <div class="flex justify-between items-center">
+                  <span class="bg-black/60 backdrop-blur px-2 py-0.5 rounded text-[10px] text-emerald-300 font-bold flex items-center gap-1">
+                    <i class="fa-solid fa-cloud-arrow-up text-xs"></i> 동기화 완료
+                  </span>
+                  <span class="bg-black/60 backdrop-blur px-2 py-0.5 rounded text-[10px] font-mono text-slate-200">${photoData.dateStr}</span>
+                </div>
+                <div class="flex justify-end gap-2">
+                  <span class="bg-indigo-600/90 text-white px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 shadow">
+                    <i class="fa-solid fa-eye"></i> 크게 보기 / 검증
+                  </span>
+                </div>
+              </div>
+            </div>
+          ` : `
+            ${!isArchiveView ? `
+              <button onclick="openUploadTypeModal('${item.id}')" class="w-full mt-2 py-3 ${item.isOptional ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-600' : 'bg-indigo-50 hover:bg-indigo-100 border-indigo-200 text-indigo-700'} border rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition active:scale-[0.99]">
+                <i class="fa-solid fa-camera text-base"></i> ${item.isOptional ? '사진 촬영 / 선택 등록' : '사진 촬영 / 등록하기'}
+              </button>
+            ` : `
+              <div class="mt-2 py-2 bg-slate-50 border border-slate-200 text-slate-400 rounded-xl text-xs text-center">
+                지난달 보관함 모드
+              </div>
+            `}
+          `}
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    async function openPhotoModal(id) {
+      const activeStore = isArchiveView ? "archive_photos" : "photos";
+      const photos = await getAllDB(activeStore);
+      const photoData = photos.find(p => p.id === id);
+      const itemInfo = rawData.find(r => r.id === id);
+
+      if (!photoData || !itemInfo) return;
+
+      document.getElementById('modal-title').innerText = `[${itemInfo.day}요일 ${itemInfo.location}] ${itemInfo.name}`;
+      document.getElementById('modal-date').innerText = `촬영 및 동기화: ${photoData.dateStr}`;
+      document.getElementById('modal-img').src = photoData.dataUrl;
+
+      const retakeBtn = document.getElementById('modal-retake-btn');
+      const deleteBtn = document.getElementById('modal-delete-btn');
+
+      if (isArchiveView) {
+        retakeBtn.style.display = 'none';
+        deleteBtn.style.display = 'none';
+      } else {
+        retakeBtn.style.display = 'flex';
+        deleteBtn.style.display = 'flex';
+
+        retakeBtn.onclick = () => {
+          closePhotoModal();
+          openUploadTypeModal(id);
+        };
+
+        deleteBtn.onclick = async () => {
+          if (confirm('이 사진을 삭제하시겠습니까?')) {
+            await deleteDB("photos", id);
+            closePhotoModal();
+            renderApp();
+          }
+        };
+      }
+
+      document.getElementById('photo-modal').classList.remove('hidden');
+    }
+
+    function closePhotoModal() {
+      document.getElementById('photo-modal').classList.add('hidden');
+    }
+
+    document.getElementById('modal-close-btn').addEventListener('click', closePhotoModal);
+
+    function openUploadTypeModal(id) {
+      if (isArchiveView) {
+        alert('지난달 보관함 모드에서는 사진을 추가할 수 없습니다.');
+        return;
+      }
+      activeTargetId = id;
+      document.getElementById('upload-type-modal').classList.remove('hidden');
+    }
+
+    function closeUploadTypeModal() {
+      document.getElementById('upload-type-modal').classList.add('hidden');
+    }
+
+document.getElementById('choose-camera-btn').addEventListener('click', () => {
+  closeUploadTypeModal();
+  setTimeout(() => {
+    const input = document.getElementById('camera-input');
+    input.value = "";
+    input.click();
+  }, 50);
+});
+
+document.getElementById('choose-gallery-btn').addEventListener('click', () => {
+  closeUploadTypeModal();
+  setTimeout(() => {
+    const input = document.getElementById('gallery-input');
+    input.value = "";
+    input.click();
+  }, 50);
+});
+
+    async function handleFileSelected(file) {
+      if (!file || !activeTargetId) return;
+      const info = rawData.find(r => r.id === activeTargetId);
+      if (!info) return;
+
+      showToast("이미지 고화질 압축 중...");
+      const compressedDataUrl = await compressImageFile(file);
+      
+      const now = new Date();
+      const dateStr = `${now.getMonth()+1}/${now.getDate()} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+      
+      await putDB("photos", { id: activeTargetId, dataUrl: compressedDataUrl, dateStr });
+      renderApp();
+
+      showToast("구글 드라이브 초고속 전송 중...");
+      
+      const fileName = `${now.getMonth()+1}월_${info.day}요일_${info.name}.jpg`;
+
+      try {
+        await fetch(GAS_URL, {
+          method: 'POST',
+          body: JSON.stringify({ fileName: fileName, dataUrl: compressedDataUrl })
+        });
+        showToast("드라이브 저장 완료!", false);
+      } catch (err) {
+        console.warn("드라이브 전송 완:", err);
+      } finally {
+        await fetchRemoteDrivePhotos();
+        renderApp();
+      }
+
+      activeTargetId = null;
+    }
+
+    document.getElementById('camera-input').addEventListener('change', function(e) {
+      handleFileSelected(e.target.files[0]);
+      e.target.value = "";
+    });
+
+    document.getElementById('gallery-input').addEventListener('change', function(e) {
+      handleFileSelected(e.target.files[0]);
+      e.target.value = "";
+    });
+
+    document.getElementById('open-menu-btn').addEventListener('click', () => {
+      document.getElementById('menu-modal').classList.remove('hidden');
+    });
+
+    document.getElementById('menu-close-btn').addEventListener('click', () => {
+      document.getElementById('menu-modal').classList.add('hidden');
+    });
+
+    document.getElementById('menu-sync-btn').addEventListener('click', async () => {
+      document.getElementById('menu-modal').classList.add('hidden');
+      await fetchRemoteDrivePhotos();
+      renderApp();
+    });
+
+    document.getElementById('menu-archive-btn').addEventListener('click', () => {
+      document.getElementById('menu-modal').classList.add('hidden');
+      isArchiveView = !isArchiveView;
+      const banner = document.getElementById('archive-banner');
+      const label = document.getElementById('menu-archive-label');
+      const zipLabel = document.getElementById('menu-zip-label');
+      const progressContainer = document.getElementById('progress-container');
+
+      if (isArchiveView) {
+        banner.classList.remove('hidden');
+        label.innerText = "이번 달로 돌아가기";
+        zipLabel.innerText = "지난달 사진 전체 ZIP 다운로드";
+        progressContainer.classList.add('opacity-50');
+      } else {
+        banner.classList.add('hidden');
+        label.innerText = "지난달 보관함 보기";
+        zipLabel.innerText = "이번 달 사진 전체 ZIP 다운로드";
+        progressContainer.classList.remove('opacity-50');
+      }
+      renderApp();
+    });
+
+    document.getElementById('menu-reset-btn').addEventListener('click', async () => {
+      document.getElementById('menu-modal').classList.add('hidden');
+      if (isArchiveView) {
+        alert('지난달 보관함은 초기화할 수 없습니다.');
+        return;
+      }
+      if (confirm('이번 달 찍은 사진들을 모두 삭제하고 초기화하시겠습니까?')) {
+        await clearDB("photos");
+        renderApp();
+        showToast("초기화 완료", false);
+      }
+    });
+
+    document.querySelectorAll('.day-tab').forEach(tab => {
+      tab.addEventListener('click', (e) => {
+        document.querySelectorAll('.day-tab').forEach(t => {
+          t.className = "day-tab bg-indigo-600/70 text-white font-medium px-4 py-1.5 rounded-full text-xs shrink-0";
+        });
+        e.target.className = "day-tab active-tab bg-white text-indigo-700 font-bold px-4 py-1.5 rounded-full text-xs shadow shrink-0";
+        activeDay = e.target.dataset.day;
+        renderApp();
+      });
+    });
+
+    document.getElementById('search-input').addEventListener('input', renderApp);
+    document.getElementById('status-filter').addEventListener('change', renderApp);
+
+    document.getElementById('menu-download-btn').addEventListener('click', async () => {
+      document.getElementById('menu-modal').classList.add('hidden');
+      const activeStore = isArchiveView ? "archive_photos" : "photos";
+      const photos = await getAllDB(activeStore);
+      
+      if (photos.length === 0) {
+        alert('다운로드할 사진이 없습니다!');
+        return;
+      }
+
+      showToast("ZIP 압축 생성 중...");
+      const zip = new JSZip();
+      const folderName = isArchiveView ? "지난달_감사보고서_수업사진" : "이번달_감사보고서_수업사진";
+      const folder = zip.folder(folderName);
+      const now = new Date();
+
+      for (const item of photos) {
+        const info = rawData.find(d => d.id === item.id);
+        if (info) {
+          const fileName = `${now.getMonth()+1}월_${info.day}요일_${info.name}.jpg`;
+          
+          if (item.dataUrl.startsWith("data:image")) {
+            const base64Data = item.dataUrl.split(',')[1];
+            folder.file(fileName, base64Data, { base64: true });
+          } else {
+            try {
+              const imgRes = await fetch(item.dataUrl);
+              const blob = await imgRes.blob();
+              folder.file(fileName, blob);
+            } catch (err) {
+              console.warn("ZIP 변환 참고:", fileName);
+            }
+          }
+        }
+      }
+
+      const content = await zip.generateAsync({ type: "blob" });
+      const zipFileName = isArchiveView 
+        ? `장수대학_지난달_수업사진.zip`
+        : `장수대학_수업사진_${now.getFullYear()}년${now.getMonth()+1}월.zip`;
+
+      saveAs(content, zipFileName);
+      showToast("ZIP 다운로드 시작!", false);
+    });
+  </script>
+</body>
+</html>
