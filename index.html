@@ -53,14 +53,27 @@
       <button onclick="exitArchiveView()" class="ml-2 bg-amber-700 text-white text-[10px] px-2 py-0.5 rounded-md hover:bg-amber-800">이번 주로 돌아가기</button>
     </div>
 
-    <!-- Progress Bar -->
-    <div id="progress-container" class="max-w-md mx-auto px-4 pb-3 pt-1">
-      <div class="flex justify-between text-xs font-semibold mb-1">
-        <span id="progress-text">필수 촬영: 0 / 69 (0%)</span>
-        <span id="warning-count-badge" class="text-[10px] bg-rose-500 text-white px-1.5 py-0.2 rounded font-bold">이번 달 0회 미완료 0개</span>
+    <!-- Dual Progress Bar (이번 주 / 이번 달) -->
+    <div id="progress-container" class="max-w-md mx-auto px-4 pb-3 pt-1 space-y-2">
+      <!-- 이번 주 진척도 -->
+      <div>
+        <div class="flex justify-between text-xs font-semibold mb-1">
+          <span id="progress-week-text">📅 이번 주 필수 촬영: 0 / 69 (0%)</span>
+        </div>
+        <div class="w-full bg-indigo-900 rounded-full h-2 overflow-hidden">
+          <div id="progress-week-bar" class="bg-emerald-400 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+        </div>
       </div>
-      <div class="w-full bg-indigo-900 rounded-full h-2 overflow-hidden">
-        <div id="progress-bar" class="bg-emerald-400 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+
+      <!-- 이번 달 진척도 -->
+      <div>
+        <div class="flex justify-between text-xs font-semibold mb-1">
+          <span id="progress-month-text">🗓️ 이번 달 필수 촬영: 0 / 69 (0%)</span>
+          <span id="warning-count-badge" class="text-[10px] bg-rose-500 text-white px-1.5 py-0.2 rounded font-bold">이번 달 0회 0개</span>
+        </div>
+        <div class="w-full bg-indigo-900 rounded-full h-2 overflow-hidden">
+          <div id="progress-month-bar" class="bg-amber-400 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+        </div>
       </div>
     </div>
 
@@ -293,7 +306,6 @@
       return (h * 60) + (m || 0);
     }
 
-    // 1일 기준 월/주차 계산 (예: 2026-9-W03)
     function getMonthWeekKey(d = new Date()) {
       const target = new Date(d.getFullYear(), d.getMonth(), d.getDate());
       const year = target.getFullYear();
@@ -318,7 +330,6 @@
       return `${year}년 ${month}월 ${week}주차`;
     }
 
-    // 📌 주차 Key와 수업 요일 기반 날짜 역산 (일 두 자리 9.04 포맷 적용)
     function calculateClassDateStr(weekKey, dayStr) {
       if (!weekKey || !weekKey.includes('-W')) {
         const now = new Date();
@@ -345,7 +356,6 @@
       return `${targetDate.getMonth() + 1}.${String(targetDate.getDate()).padStart(2, '0')}`;
     }
 
-    // 📌 파일명 날짜(예: "9.04")를 기반으로 주차 Key 역계산
     function calculateWeekFromDateStr(dateStr) {
       if (!dateStr || !dateStr.includes('.')) return getMonthWeekKey();
       const [month, day] = dateStr.split('.').map(Number);
@@ -581,15 +591,26 @@
 
       const mandatoryItems = rawData.filter(d => !d.isOptional);
       const mandatoryTotal = mandatoryItems.length;
-      const mandatoryCompleted = mandatoryItems.filter(d => photoMap.has(d.id)).length;
+      
+      // 1. 이번 주 필수 촬영 완료 수
+      const mandatoryWeekCompleted = mandatoryItems.filter(d => photoMap.has(d.id)).length;
+      const weekPercent = Math.round((mandatoryWeekCompleted / mandatoryTotal) * 100);
+
+      // 2. 이번 달 필수 촬영 완료 수 (최소 1회 이상 업로드된 수업 수)
+      const mandatoryMonthCompleted = mandatoryItems.filter(d => (monthlyCountMap.get(d.id) || 0) > 0).length;
+      const monthPercent = Math.round((mandatoryMonthCompleted / mandatoryTotal) * 100);
+
       const warningItems = mandatoryItems.filter(d => (monthlyCountMap.get(d.id) || 0) === 0);
       const warningCount = warningItems.length;
 
-      const percent = Math.round((mandatoryCompleted / mandatoryTotal) * 100);
+      // 프로그레스 바 UI 갱신
+      document.getElementById('progress-week-text').innerText = `📅 ${isArchiveView ? '선택 주차' : '이번 주'} 필수: ${mandatoryWeekCompleted} / ${mandatoryTotal} (${weekPercent}%)`;
+      document.getElementById('progress-week-bar').style.width = `${weekPercent}%`;
 
-      document.getElementById('progress-text').innerText = `${isArchiveView ? '선택 주차' : '이번 주'} 필수 촬영: ${mandatoryCompleted} / ${mandatoryTotal} (${percent}%)`;
-      document.getElementById('warning-count-badge').innerText = `이번 달 0회 미완료 ${warningCount}개`;
-      document.getElementById('progress-bar').style.width = `${percent}%`;
+      document.getElementById('progress-month-text').innerText = `🗓️ ${currentMonthNum}월 누적 필수: ${mandatoryMonthCompleted} / ${mandatoryTotal} (${monthPercent}%)`;
+      document.getElementById('progress-month-bar').style.width = `${monthPercent}%`;
+      
+      document.getElementById('warning-count-badge').innerText = `이번 달 0회 ${warningCount}개`;
 
       const banner = document.getElementById('archive-banner');
       if (isArchiveView) {
@@ -752,7 +773,6 @@
         if (confirm('구글 드라이브 및 스마트폰에서 이 사진을 완전 삭제하시겠습니까?')) {
           showToast("구글 드라이브 사진 삭제 중...");
           try {
-            // 📌 저장된 전체 파일명(예: 9.04_줌바댄스.jpg) 또는 수업명을 전달하여 드라이브 파일 찾기 정확도 향상
             const targetName = photoData.fileName || itemInfo.name;
             await fetch(GAS_URL, {
               method: 'POST',
@@ -821,7 +841,6 @@
       const now = new Date();
       const timeStr = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
       
-      // 📌 선택 주차(1주차 등) + 수업 요일(금) 기반 역산 날짜 (예: 9.04)
       const calculatedDateStr = calculateClassDateStr(currentViewingWeek, info.day);
       const fileName = `${calculatedDateStr}_${info.name}.jpg`;
       const dateStr = `${calculatedDateStr} ${timeStr}`;
