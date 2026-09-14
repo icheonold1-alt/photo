@@ -57,7 +57,7 @@
     <div id="progress-container" class="max-w-md mx-auto px-4 pb-3 pt-1">
       <div class="flex justify-between text-xs font-semibold mb-1">
         <span id="progress-text">필수 촬영: 0 / 69 (0%)</span>
-        <span id="warning-count-badge" class="text-[10px] bg-rose-500 text-white px-1.5 py-0.2 rounded font-bold">이번 달 0회 미달선 0개</span>
+        <span id="warning-count-badge" class="text-[10px] bg-rose-500 text-white px-1.5 py-0.2 rounded font-bold">이번 달 0회 미완료 0개</span>
       </div>
       <div class="w-full bg-indigo-900 rounded-full h-2 overflow-hidden">
         <div id="progress-bar" class="bg-emerald-400 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
@@ -588,7 +588,7 @@
       const percent = Math.round((mandatoryCompleted / mandatoryTotal) * 100);
 
       document.getElementById('progress-text').innerText = `${isArchiveView ? '선택 주차' : '이번 주'} 필수 촬영: ${mandatoryCompleted} / ${mandatoryTotal} (${percent}%)`;
-      document.getElementById('warning-count-badge').innerText = `이번 달 0회 미달선 ${warningCount}개`;
+      document.getElementById('warning-count-badge').innerText = `이번 달 0회 미완료 ${warningCount}개`;
       document.getElementById('progress-bar').style.width = `${percent}%`;
 
       const banner = document.getElementById('archive-banner');
