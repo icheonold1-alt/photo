@@ -752,9 +752,11 @@
         if (confirm('구글 드라이브 및 스마트폰에서 이 사진을 완전 삭제하시겠습니까?')) {
           showToast("구글 드라이브 사진 삭제 중...");
           try {
+            // 📌 저장된 전체 파일명(예: 9.04_줌바댄스.jpg) 또는 수업명을 전달하여 정확히 매칭 삭제
+            const targetName = photoData.fileName || itemInfo.name;
             await fetch(GAS_URL, {
               method: 'POST',
-              body: JSON.stringify({ action: "delete", targetKey: itemInfo.name })
+              body: JSON.stringify({ action: "delete", targetKey: targetName })
             });
           } catch (err) {
             console.warn("드라이브 삭제 처리 중:", err);
