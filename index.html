@@ -318,30 +318,40 @@
       return `${year}년 ${month}월 ${week}주차`;
     }
 
-    // 📌 주차 Key와 수업 요일을 이용해 해당 요일의 실제 날짜(예: "9.4") 역산
+    // 📌 주차 Key와 수업 요일 기반 정확한 날짜 역산 (예: W01 + 금 ➔ 9.4)
     function calculateClassDateStr(weekKey, dayStr) {
-      const parts = weekKey.split('-');
-      if (parts.length < 3) {
+      if (!weekKey || !weekKey.includes('-W')) {
         const now = new Date();
-        return `${now.getMonth()+1}.${now.getDate()}`;
+        return `${now.getMonth() + 1}.${now.getDate()}`;
       }
+
+      const parts = weekKey.split('-');
       const year = parseInt(parts[0], 10);
-      const month = parseInt(parts[1], 10) - 1; // 0-indexed
+      const month = parseInt(parts[1], 10);
       const weekNum = parseInt(parts[2].replace('W', ''), 10);
 
-      const firstDayOfMonth = new Date(year, month, 1);
-      const dayOfWeekOfFirst = firstDayOfMonth.getDay();
-      const offset = (dayOfWeekOfFirst === 0 ? 6 : dayOfWeekOfFirst - 1);
+      const firstDay = new Date(year, month - 1, 1);
+      let firstDayOfWeek = firstDay.getDay();
+      if (firstDayOfWeek === 0) firstDayOfWeek = 7;
 
-      // 해당 주차의 월요일 날짜 계산
-      const mondayDateNum = (weekNum - 1) * 7 - offset + 1;
-      const monday = new Date(year, month, mondayDateNum);
+      const firstMondayDateNum = 1 - (firstDayOfWeek - 1);
+      const targetMondayDateNum = firstMondayDateNum + (weekNum - 1) * 7;
 
-      const dayMap = { "월": 0, "화": 1, "수": 2, "목": 3, "금": 4, "토": 5, "일": 6 };
+      const dayMap = { "월": 0, "화": 1, "수": 2, "목": 3, "금": 4 };
       const addDays = dayMap[dayStr] !== undefined ? dayMap[dayStr] : 0;
 
-      const targetDate = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + addDays);
+      const targetDate = new Date(year, month - 1, targetMondayDateNum + addDays);
+
       return `${targetDate.getMonth() + 1}.${targetDate.getDate()}`;
+    }
+
+    // 📌 파일명 날짜(예: "9.4")를 기반으로 주차 Key 역계산
+    function calculateWeekFromDateStr(dateStr) {
+      if (!dateStr || !dateStr.includes('.')) return getMonthWeekKey();
+      const [month, day] = dateStr.split('.').map(Number);
+      const now = new Date();
+      const targetDate = new Date(now.getFullYear(), month - 1, day);
+      return getMonthWeekKey(targetDate);
     }
 
     let db;
@@ -395,16 +405,19 @@
         remoteFileListCache = Array.isArray(fileList) ? fileList : [];
 
         if (Array.isArray(fileList)) {
+          const realCurrentWeekKey = getMonthWeekKey();
+
           for (const file of fileList) {
             const info = rawData.find(d => file.name.includes(d.name));
             if (info) {
               const pid = info.id;
-              const createdDate = new Date(file.created);
-              const dateStr = createdDate.toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
               const driveImgUrl = `https://lh3.googleusercontent.com/d/${file.id}`;
-              const fileWeekKey = getMonthWeekKey(createdDate);
+              
+              const nameDatePart = file.name.split('_')[0]; 
+              const fileWeekKey = calculateWeekFromDateStr(nameDatePart);
+              const dateStr = `${nameDatePart} (드라이브동기화)`;
 
-              if (fileWeekKey === getMonthWeekKey()) {
+              if (fileWeekKey === realCurrentWeekKey) {
                 const existing = await getPhotoDB("photos", pid);
                 if (!existing) {
                   await putDB("photos", { id: pid, dataUrl: driveImgUrl, dateStr, driveId: file.id, fileName: file.name, weekKey: fileWeekKey });
@@ -806,7 +819,7 @@
       const now = new Date();
       const timeStr = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
       
-      // 📌 주차와 수업 요일 기반으로 실제 날짜 역산 (예: 9.4)
+      // 📌 선택 주차(1주차 등) + 수업 요일(금) 기반 역산 날짜 (9.4)
       const calculatedDateStr = calculateClassDateStr(currentViewingWeek, info.day);
       const fileName = `${calculatedDateStr}_${info.name}.jpg`;
       const dateStr = `${calculatedDateStr} ${timeStr}`;
