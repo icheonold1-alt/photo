@@ -342,7 +342,7 @@
 
       const targetDate = new Date(year, month - 1, targetMondayDateNum + addDays);
 
-      return `${targetDate.getMonth() + 1}.${targetDate.getDate()}`;
+      return `${targetDate.getMonth() + 1}.${String(targetDate.getDate()).padStart(2, '0')}`;
     }
 
     // 📌 파일명 날짜(예: "9.4")를 기반으로 주차 Key 역계산
