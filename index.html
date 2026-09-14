@@ -33,14 +33,14 @@
           <i class="fa-solid fa-camera"></i> 장수대학 수업사진 관리
         </h1>
         <div class="flex items-center gap-2 mt-0.5">
-          <span class="text-xs text-indigo-200" id="current-week-badge">주차 확인 중</span>
+          <span class="text-xs text-indigo-200 font-bold" id="current-week-badge">주차 계산 중...</span>
           <span class="bg-emerald-500/30 border border-emerald-400/50 text-emerald-200 text-[10px] px-1.5 py-0.2 rounded font-semibold flex items-center gap-1">
-            <i class="fa-solid fa-users"></i> 주간 리셋 동기화
+            <i class="fa-solid fa-users"></i> 주간 동기화
           </span>
         </div>
       </div>
       
-      <!-- Integrated Settings / Menu Button -->
+      <!-- Menu Button -->
       <button id="open-menu-btn" class="bg-indigo-800 hover:bg-indigo-900 border border-indigo-500 text-white text-xs font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition">
         <i class="fa-solid fa-bars"></i> 메뉴
       </button>
@@ -49,16 +49,17 @@
     <!-- Archive Banner -->
     <div id="archive-banner" class="bg-amber-500 text-slate-900 px-4 py-1.5 text-xs font-bold text-center hidden flex items-center justify-center gap-2">
       <i class="fa-solid fa-box-archive"></i>
-      <span>[지난주 보관함]을 조회 중입니다.</span>
+      <span id="archive-banner-text">[보관함]을 조회 중입니다.</span>
+      <button onclick="exitArchiveView()" class="ml-2 bg-amber-700 text-white text-[10px] px-2 py-0.5 rounded-md hover:bg-amber-800">이번 주로 돌아가기</button>
     </div>
 
     <!-- Progress Bar -->
     <div id="progress-container" class="max-w-md mx-auto px-4 pb-3 pt-1">
       <div class="flex justify-between text-xs font-semibold mb-1">
         <span id="progress-text">이번 주 필수 촬영: 0 / 69 (0%)</span>
-        <span id="warning-count-badge" class="text-[10px] bg-rose-500 text-white px-1.5 py-0.2 rounded font-bold">이번 달 0회 미달선경고</span>
+        <span id="warning-count-badge" class="text-[10px] bg-rose-500 text-white px-1.5 py-0.2 rounded font-bold">이번 달 0회 미달선 0개</span>
       </div>
-      <div class="w-full bg-indigo-900 rounded-full h-2 rounded-full overflow-hidden">
+      <div class="w-full bg-indigo-900 rounded-full h-2 overflow-hidden">
         <div id="progress-bar" class="bg-emerald-400 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
       </div>
     </div>
@@ -92,7 +93,7 @@
       </select>
     </div>
 
-    <!-- Info Banner for Order -->
+    <!-- Info Banner -->
     <div class="mb-3 text-[11px] text-slate-500 flex items-center justify-between px-1">
       <span><i class="fa-solid fa-arrow-down-short-wide text-indigo-500 mr-1"></i>시간순 ➔ 낮은 층수순 정렬됨</span>
       <span class="text-slate-400">(주 1회 촬영 / 월 최소 1회 필수)</span>
@@ -131,7 +132,7 @@
     <div class="bg-white rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl flex flex-col">
       <div class="p-4 bg-indigo-700 text-white flex justify-between items-center">
         <h3 class="font-bold text-base flex items-center gap-2">
-          <i class="fa-solid fa-sliders"></i> 관리 및 다운로드 메뉴
+          <i class="fa-solid fa-sliders"></i> 관리 및 주차별 보관함
         </h3>
         <button id="menu-close-btn" class="text-white/80 hover:text-white text-lg p-1">
           <i class="fa-solid fa-xmark"></i>
@@ -139,18 +140,26 @@
       </div>
       
       <div class="p-4 space-y-3">
-        <button id="menu-download-btn" class="w-full py-3.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-2xl text-sm shadow flex items-center justify-between transition">
-          <span class="flex items-center gap-2"><i class="fa-solid fa-file-zipper text-lg"></i> <span id="menu-zip-label">전체 사진 ZIP 다운로드</span></span>
+        <!-- Week Selector Area -->
+        <div class="bg-indigo-50 border border-indigo-100 p-3 rounded-2xl space-y-1.5">
+          <label class="text-xs font-bold text-indigo-900 flex items-center gap-1.5">
+            <i class="fa-solid fa-calendar-week text-indigo-600"></i> 주차 선택 및 보관함 이동
+          </label>
+          <select id="week-selector" class="w-full bg-white border border-indigo-200 text-xs font-bold rounded-xl px-3 py-2 text-indigo-900 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            <!-- Dynamically Populated -->
+          </select>
+          <button id="load-week-btn" class="w-full mt-1 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs transition">
+            선택한 주차 조회하기
+          </button>
+        </div>
+
+        <button id="menu-download-btn" class="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-2xl text-xs shadow flex items-center justify-between transition">
+          <span class="flex items-center gap-2"><i class="fa-solid fa-file-zipper text-base"></i> <span id="menu-zip-label">현재 주차 사진 ZIP 다운로드</span></span>
           <i class="fa-solid fa-chevron-right text-xs opacity-70"></i>
         </button>
 
-        <button id="menu-sync-btn" class="w-full py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-2xl text-xs flex items-center justify-between transition">
-          <span class="flex items-center gap-2"><i class="fa-solid fa-rotate text-indigo-600"></i> 구글 드라이브 수동 동기화</span>
-          <i class="fa-solid fa-chevron-right text-xs opacity-50"></i>
-        </button>
-
-        <button id="menu-archive-btn" class="w-full py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-2xl text-xs flex items-center justify-between transition">
-          <span class="flex items-center gap-2"><i class="fa-solid fa-box-archive text-amber-600"></i> <span id="menu-archive-label">지난주 보관함 보기</span></span>
+        <button id="menu-sync-btn" class="w-full py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-2xl text-xs flex items-center justify-between transition">
+          <span class="flex items-center gap-2"><i class="fa-solid fa-rotate text-indigo-600"></i> 구글 드라이브 동기화</span>
           <i class="fa-solid fa-chevron-right text-xs opacity-50"></i>
         </button>
 
@@ -215,7 +224,7 @@
       { id: "P019", location: "3층큰마당", day: "목", time: "11:00~11:50", name: "라인댄스" },
       { id: "P020", location: "3층큰마당", day: "목", time: "13:00~13:20", name: "오후 조회", isOptional: true },
       { id: "P021", location: "3층큰마당", day: "목", time: "13:25~15:00", name: "하하하송" },
-      { id: "P022", location: "3층큰마당", day: "목", time: "15:00~15:50", name: "백세요가" },
+      { id: "P022", location: "3층큰마당", day: "목", time: "15:00~15:50", name: "백하세요가" },
       { id: "P023", location: "3층큰마당", day: "금", time: "10:00~10:50", name: "단전호흡" },
       { id: "P024", location: "3층큰마당", day: "금", time: "11:00~11:50", name: "웰빙 에어로빅" },
       { id: "P025", location: "3층큰마당", day: "금", time: "13:00~13:50", name: "줌바댄스" },
@@ -284,25 +293,38 @@
       return (h * 60) + (m || 0);
     }
 
-    // Get ISO Year and Week Number
-    function getYearAndWeek(d = new Date()) {
-      const target = new Date(d.valueOf());
-      const dayNr = (d.getDay() + 6) % 7;
-      target.setDate(target.getDate() - dayNr + 3);
-      const firstThursday = target.valueOf();
-      target.setMonth(0, 1);
-      if (target.getDay() !== 4) {
-        target.setMonth(0, 1 + ((4 - target.getDay() + 7) % 7));
-      }
-      const weekNumber = 1 + Math.round((firstThursday - target.valueOf()) / 604800000);
-      return `${target.getFullYear()}-W${String(weekNumber).padStart(2, '0')}`;
+    // 1일 기준 정확한 월/주차 계산 함수 (예: 2026-9-W03)
+    function getMonthWeekKey(d = new Date()) {
+      const target = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+      const year = target.getFullYear();
+      const month = target.getMonth() + 1;
+      
+      const firstDayOfMonth = new Date(year, target.getMonth(), 1);
+      const dayOfWeekOfFirst = firstDayOfMonth.getDay(); // 0: 일, 1: 월 ...
+      
+      const currentDate = target.getDate();
+      let weekNum = Math.ceil((currentDate + (dayOfWeekOfFirst === 0 ? 6 : dayOfWeekOfFirst - 1)) / 7);
+
+      return `${year}-${month}-W${String(weekNum).padStart(2, '0')}`;
+    }
+
+    // 사용자 친화적 주차 한글 이름
+    function formatWeekTitle(weekKey) {
+      if (!weekKey) return "주차 정보 없음";
+      const parts = weekKey.split('-');
+      if (parts.length < 3) return weekKey;
+      const year = parts[0];
+      const month = parseInt(parts[1], 10);
+      const week = parseInt(parts[2].replace('W', ''), 10);
+      return `${year}년 ${month}월 ${week}주차`;
     }
 
     let db;
     let isArchiveView = false;
-    let remoteFileListCache = []; // 구글 드라이브 전체 파일 데이터 (월별 횟수 계산용)
+    let currentViewingWeek = getMonthWeekKey();
+    let remoteFileListCache = [];
 
-    const dbRequest = indexedDB.open("TimetableAppDB_WeeklySync", 4);
+    const dbRequest = indexedDB.open("TimetableAppDB_MultiWeek", 5);
     dbRequest.onupgradeneeded = (e) => {
       db = e.target.result;
       if (!db.objectStoreNames.contains("photos")) db.createObjectStore("photos", { keyPath: "id" });
@@ -314,36 +336,34 @@
       db = e.target.result;
       await checkAndAutoArchiveWeekly();
       await fetchRemoteDrivePhotos();
+      populateWeekSelector();
       renderApp();
     };
 
-    // Auto Weekly Migration Check (Runs on new week start)
     async function checkAndAutoArchiveWeekly() {
-      const currentWeekKey = getYearAndWeek();
+      const realCurrentWeekKey = getMonthWeekKey();
       const savedWeekObj = await getMetaDB("currentWeek");
       const savedWeek = savedWeekObj ? savedWeekObj.value : null;
 
-      if (savedWeek && savedWeek !== currentWeekKey) {
+      if (savedWeek && savedWeek !== realCurrentWeekKey) {
         const currentPhotos = await getAllDB("photos");
-        await clearDB("archive_photos");
         for (const item of currentPhotos) {
           await putDB("archive_photos", { ...item, archiveWeek: savedWeek });
         }
         await clearDB("photos");
-        await putDB("meta", { key: "currentWeek", value: currentWeekKey });
-        showToast(`🎉 새로운 주차(${currentWeekKey})가 시작되어 이전 주차 사진이 보관함으로 이동되었습니다.`);
+        await putDB("meta", { key: "currentWeek", value: realCurrentWeekKey });
+        showToast(`🎉 새로운 주차(${formatWeekTitle(realCurrentWeekKey)})가 시작되었습니다.`);
       } else if (!savedWeek) {
-        await putDB("meta", { key: "currentWeek", value: currentWeekKey });
+        await putDB("meta", { key: "currentWeek", value: realCurrentWeekKey });
       }
 
-      const now = new Date();
-      document.getElementById('current-week-badge').innerText = `${now.getMonth()+1}월 주간 촬영 중`;
+      currentViewingWeek = realCurrentWeekKey;
+      document.getElementById('current-week-badge').innerText = formatWeekTitle(realCurrentWeekKey);
     }
 
-    // Synchronize with Drive & Fetch List
     async function fetchRemoteDrivePhotos() {
       try {
-        showToast("구글 드라이브 최신 현황 동기화 중...");
+        showToast("구글 드라이브 최신 사진 동기화 중...");
         const res = await fetch(GAS_URL);
         if (!res.ok) throw new Error("서버 응답 오류");
         const fileList = await res.json();
@@ -354,20 +374,53 @@
             const info = rawData.find(d => file.name.includes(d.name));
             if (info) {
               const pid = info.id;
-              const dateStr = new Date(file.created).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+              const createdDate = new Date(file.created);
+              const dateStr = createdDate.toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
               const driveImgUrl = `https://lh3.googleusercontent.com/d/${file.id}`;
+              const fileWeekKey = getMonthWeekKey(createdDate);
 
-              const existing = await getPhotoDB("photos", pid);
-              if (!existing) {
-                await putDB("photos", { id: pid, dataUrl: driveImgUrl, dateStr, driveId: file.id, fileName: file.name });
+              if (fileWeekKey === getMonthWeekKey()) {
+                const existing = await getPhotoDB("photos", pid);
+                if (!existing) {
+                  await putDB("photos", { id: pid, dataUrl: driveImgUrl, dateStr, driveId: file.id, fileName: file.name, weekKey: fileWeekKey });
+                }
+              } else {
+                const archiveId = `${fileWeekKey}_${pid}`;
+                const existingArchive = await getPhotoDB("archive_photos", archiveId);
+                if (!existingArchive) {
+                  await putDB("archive_photos", { id: archiveId, originalId: pid, dataUrl: driveImgUrl, dateStr, driveId: file.id, fileName: file.name, archiveWeek: fileWeekKey });
+                }
               }
             }
           }
         }
         showToast("동기화 완료!", false);
       } catch (err) {
-        console.warn("구글 드라이브 동기화 참고:", err);
+        console.warn("드라이브 동기화 참고:", err);
       }
+    }
+
+    function populateWeekSelector() {
+      const selector = document.getElementById('week-selector');
+      selector.innerHTML = '';
+      
+      const now = new Date();
+      const currentWeekKey = getMonthWeekKey(now);
+      const weeks = [];
+
+      // 이번 달 1주차 ~ 5주차 및 이전 주차 목록 자동 생성
+      for (let w = 1; w <= 5; w++) {
+        const key = `${now.getFullYear()}-${now.getMonth()+1}-W${String(w).padStart(2, '0')}`;
+        weeks.push(key);
+      }
+
+      weeks.forEach(wKey => {
+        const opt = document.createElement('option');
+        opt.value = wKey;
+        opt.innerText = formatWeekTitle(wKey) + (wKey === currentWeekKey ? " (현재 이번 주)" : "");
+        if (wKey === currentViewingWeek) opt.selected = true;
+        selector.appendChild(opt);
+      });
     }
 
     function showToast(msg, isLoading = true) {
@@ -375,11 +428,7 @@
       const icon = document.getElementById('toast-icon');
       const text = document.getElementById('toast-msg');
       text.innerText = msg;
-      if (isLoading) {
-        icon.className = "fa-solid fa-spinner fa-spin text-emerald-400";
-      } else {
-        icon.className = "fa-solid fa-circle-check text-emerald-400";
-      }
+      icon.className = isLoading ? "fa-solid fa-spinner fa-spin text-emerald-400" : "fa-solid fa-circle-check text-emerald-400";
       toast.classList.remove('opacity-0', 'pointer-events-none');
       setTimeout(() => {
         toast.classList.add('opacity-0', 'pointer-events-none');
@@ -463,14 +512,27 @@
     let activeTargetId = null;
 
     async function renderApp() {
+      const realCurrentWeekKey = getMonthWeekKey();
+      isArchiveView = (currentViewingWeek !== realCurrentWeekKey);
+
       const activeStore = isArchiveView ? "archive_photos" : "photos";
       const photosList = await getAllDB(activeStore);
-      const photoMap = new Map(photosList.map(item => [item.id, item]));
+
+      const photoMap = new Map();
+      photosList.forEach(item => {
+        if (isArchiveView) {
+          if (item.archiveWeek === currentViewingWeek) {
+            photoMap.set(item.originalId || item.id, item);
+          }
+        } else {
+          photoMap.set(item.id, item);
+        }
+      });
 
       const now = new Date();
       const currentMonthNum = now.getMonth() + 1;
 
-      // Calculate monthly upload count for each program from drive file list
+      // 구글 드라이브 파일 목록 기반 월별 촬영 횟수 계산
       const monthlyCountMap = new Map();
       remoteFileListCache.forEach(file => {
         rawData.forEach(item => {
@@ -484,16 +546,22 @@
       const mandatoryItems = rawData.filter(d => !d.isOptional);
       const mandatoryTotal = mandatoryItems.length;
       const mandatoryCompleted = mandatoryItems.filter(d => photoMap.has(d.id)).length;
-
-      // Mandatory items that have 0 uploads this month
       const warningItems = mandatoryItems.filter(d => (monthlyCountMap.get(d.id) || 0) === 0);
       const warningCount = warningItems.length;
 
       const percent = Math.round((mandatoryCompleted / mandatoryTotal) * 100);
 
-      document.getElementById('progress-text').innerText = `이번 주 필수 촬영: ${mandatoryCompleted} / ${mandatoryTotal} (${percent}%)`;
+      document.getElementById('progress-text').innerText = `${isArchiveView ? '선택 주차' : '이번 주'} 필수 촬영: ${mandatoryCompleted} / ${mandatoryTotal} (${percent}%)`;
       document.getElementById('warning-count-badge').innerText = `이번 달 0회 미달선 ${warningCount}개`;
       document.getElementById('progress-bar').style.width = `${percent}%`;
+
+      const banner = document.getElementById('archive-banner');
+      if (isArchiveView) {
+        banner.classList.remove('hidden');
+        document.getElementById('archive-banner-text').innerText = `[${formatWeekTitle(currentViewingWeek)} 보관함]을 조회 중입니다.`;
+      } else {
+        banner.classList.add('hidden');
+      }
 
       const searchTerm = document.getElementById('search-input').value.trim().toLowerCase();
       const statusFilter = document.getElementById('status-filter').value;
@@ -564,7 +632,6 @@
                 <span class="bg-slate-100 text-slate-700 font-bold px-2 py-0.5 rounded text-xs font-mono"><i class="fa-regular fa-clock text-indigo-500 mr-1"></i>${item.time}</span>
                 ${item.isOptional ? `<span class="bg-slate-200 text-slate-600 px-1.5 py-0.2 rounded text-[10px] font-semibold">선택(기타)</span>` : ''}
                 
-                <!-- Monthly Photo Count Badge -->
                 <span class="px-2 py-0.2 rounded text-[10px] font-bold ${isDanger ? 'bg-rose-600 text-white animate-pulse' : 'bg-slate-200 text-slate-700'}">
                   ${currentMonthNum}월 촬영: ${monthCount}회
                 </span>
@@ -579,7 +646,7 @@
             </div>
             <div>
               ${isCompleted 
-                ? `<span class="inline-flex items-center gap-1 bg-emerald-100 text-emerald-700 px-2.5 py-1 rounded-full text-xs font-bold shrink-0"><i class="fa-solid fa-circle-check"></i> 주간 완료</span>`
+                ? `<span class="inline-flex items-center gap-1 bg-emerald-100 text-emerald-700 px-2.5 py-1 rounded-full text-xs font-bold shrink-0"><i class="fa-solid fa-circle-check"></i> 완료</span>`
                 : (item.isOptional 
                     ? `<span class="inline-flex items-center gap-1 bg-slate-100 text-slate-400 px-2.5 py-1 rounded-full text-xs shrink-0"><i class="fa-solid fa-circle-minus"></i> 선택사항</span>`
                     : (isDanger 
@@ -601,7 +668,7 @@
                 </div>
                 <div class="flex justify-end gap-2">
                   <span class="bg-indigo-600/90 text-white px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 shadow">
-                    <i class="fa-solid fa-eye"></i> 크게 보기 / 삭제
+                    <i class="fa-solid fa-eye"></i> 크게 보기 ${isArchiveView ? '' : '/ 삭제'}
                   </span>
                 </div>
               </div>
@@ -613,7 +680,7 @@
               </button>
             ` : `
               <div class="mt-2 py-2 bg-slate-50 border border-slate-200 text-slate-400 rounded-xl text-xs text-center">
-                지난주 보관함 모드
+                ${formatWeekTitle(currentViewingWeek)} 보관함 조회 모드
               </div>
             `}
           `}
@@ -622,10 +689,16 @@
       });
     }
 
+    function exitArchiveView() {
+      currentViewingWeek = getMonthWeekKey();
+      document.getElementById('week-selector').value = currentViewingWeek;
+      renderApp();
+    }
+
     async function openPhotoModal(id) {
       const activeStore = isArchiveView ? "archive_photos" : "photos";
       const photos = await getAllDB(activeStore);
-      const photoData = photos.find(p => p.id === id);
+      const photoData = photos.find(p => isArchiveView ? (p.originalId === id || p.id === `${currentViewingWeek}_${id}`) : p.id === id);
       const itemInfo = rawData.find(r => r.id === id);
 
       if (!photoData || !itemInfo) return;
@@ -649,12 +722,10 @@
           openUploadTypeModal(id);
         };
 
-        // Complete Delete from Local DB & Google Drive
         deleteBtn.onclick = async () => {
           if (confirm('구글 드라이브 및 스마트폰에서 이 사진을 완전 삭제하시겠습니까?')) {
             showToast("구글 드라이브 사진 삭제 중...");
             try {
-              // Delete from Drive via GAS POST action
               await fetch(GAS_URL, {
                 method: 'POST',
                 body: JSON.stringify({ action: "delete", targetKey: itemInfo.name })
@@ -662,7 +733,6 @@
             } catch (err) {
               console.warn("드라이브 삭제 처리 중:", err);
             }
-            // Delete Local DB
             await deleteDB("photos", id);
             closePhotoModal();
             showToast("삭제 완료", false);
@@ -683,7 +753,7 @@
 
     function openUploadTypeModal(id) {
       if (isArchiveView) {
-        alert('지난주 보관함 모드에서는 사진을 추가할 수 없습니다.');
+        alert('보관함 모드에서는 사진을 추가할 수 없습니다.');
         return;
       }
       activeTargetId = id;
@@ -694,7 +764,6 @@
       document.getElementById('upload-type-modal').classList.add('hidden');
     }
 
-    // Modal click & timeout delay for reliable triggering
     document.getElementById('choose-camera-btn').addEventListener('click', () => {
       closeUploadTypeModal();
       setTimeout(() => {
@@ -724,10 +793,10 @@
       const now = new Date();
       const dateStr = `${now.getMonth()+1}/${now.getDate()} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
       
-      // Filename format: 9.14_문해2단계.jpg
+      // 파일명: 9.14_문해2단계(월).jpg (수업 rawData.name 활용)
       const fileName = `${now.getMonth()+1}.${now.getDate()}_${info.name}.jpg`;
 
-      await putDB("photos", { id: activeTargetId, dataUrl: compressedDataUrl, dateStr, fileName });
+      await putDB("photos", { id: activeTargetId, dataUrl: compressedDataUrl, dateStr, fileName, weekKey: getMonthWeekKey() });
       renderApp();
 
       showToast("구글 드라이브 초고속 전송 중...");
@@ -766,38 +835,23 @@
       document.getElementById('menu-modal').classList.add('hidden');
     });
 
+    document.getElementById('load-week-btn').addEventListener('click', () => {
+      const selectedWeek = document.getElementById('week-selector').value;
+      currentViewingWeek = selectedWeek;
+      document.getElementById('menu-modal').classList.add('hidden');
+      renderApp();
+    });
+
     document.getElementById('menu-sync-btn').addEventListener('click', async () => {
       document.getElementById('menu-modal').classList.add('hidden');
       await fetchRemoteDrivePhotos();
       renderApp();
     });
 
-    document.getElementById('menu-archive-btn').addEventListener('click', () => {
-      document.getElementById('menu-modal').classList.add('hidden');
-      isArchiveView = !isArchiveView;
-      const banner = document.getElementById('archive-banner');
-      const label = document.getElementById('menu-archive-label');
-      const zipLabel = document.getElementById('menu-zip-label');
-      const progressContainer = document.getElementById('progress-container');
-
-      if (isArchiveView) {
-        banner.classList.remove('hidden');
-        label.innerText = "이번 주로 돌아가기";
-        zipLabel.innerText = "지난주 사진 전체 ZIP 다운로드";
-        progressContainer.classList.add('opacity-50');
-      } else {
-        banner.classList.add('hidden');
-        label.innerText = "지난주 보관함 보기";
-        zipLabel.innerText = "이번 주 사진 전체 ZIP 다운로드";
-        progressContainer.classList.remove('opacity-50');
-      }
-      renderApp();
-    });
-
     document.getElementById('menu-reset-btn').addEventListener('click', async () => {
       document.getElementById('menu-modal').classList.add('hidden');
       if (isArchiveView) {
-        alert('지난주 보관함은 초기화할 수 없습니다.');
+        alert('보관함 모드에서는 초기화할 수 없습니다.');
         return;
       }
       if (confirm('이번 주 찍은 사진들을 모두 삭제하고 초기화하시겠습니까?')) {
@@ -826,21 +880,22 @@
       const activeStore = isArchiveView ? "archive_photos" : "photos";
       const photos = await getAllDB(activeStore);
       
-      if (photos.length === 0) {
+      const filteredPhotos = photos.filter(item => isArchiveView ? item.archiveWeek === currentViewingWeek : true);
+
+      if (filteredPhotos.length === 0) {
         alert('다운로드할 사진이 없습니다!');
         return;
       }
 
       showToast("ZIP 압축 생성 중...");
       const zip = new JSZip();
-      const folderName = isArchiveView ? "지난주_감사보고서_수업사진" : "이번주_감사보고서_수업사진";
+      const folderName = `${formatWeekTitle(currentViewingWeek)}_수업사진`;
       const folder = zip.folder(folderName);
-      const now = new Date();
 
-      for (const item of photos) {
-        const info = rawData.find(d => d.id === item.id);
+      for (const item of filteredPhotos) {
+        const info = rawData.find(d => d.id === (item.originalId || item.id));
         if (info) {
-          const fileName = item.fileName || `${now.getMonth()+1}.${now.getDate()}_${info.name}.jpg`;
+          const fileName = item.fileName || `${info.name}.jpg`;
           
           if (item.dataUrl.startsWith("data:image")) {
             const base64Data = item.dataUrl.split(',')[1];
@@ -858,9 +913,7 @@
       }
 
       const content = await zip.generateAsync({ type: "blob" });
-      const zipFileName = isArchiveView 
-        ? `장수대학_지난주_수업사진.zip`
-        : `장수대학_수업사진_${getYearAndWeek()}.zip`;
+      const zipFileName = `장수대학_${formatWeekTitle(currentViewingWeek)}_사진.zip`;
 
       saveAs(content, zipFileName);
       showToast("ZIP 다운로드 시작!", false);
