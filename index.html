@@ -785,6 +785,22 @@
               headers: { 'Content-Type': 'text/plain' },
               body: JSON.stringify({ action: "delete", targetKey: targetName })
             });
+            
+            if (isArchiveView) {
+              await deleteDB("archive_photos", photoData.id);
+            } else {
+              await deleteDB("photos", id);
+            }
+      
+            closePhotoModal();
+            renderApp();
+            showToast("삭제 완료! 드라이브 반영 중...", false);
+      
+            // 📌 3. 구글 드라이브 삭제 반영 시간을 위해 1.5초 대기 후 동기화 수행
+            await new Promise(resolve => setTimeout(resolve, 1500));
+            
+            await fetchRemoteDrivePhotos();
+            renderApp();          
           } catch (err) {
             console.warn("드라이브 삭제 처리 중:", err);
           }
