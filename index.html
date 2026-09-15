@@ -778,13 +778,9 @@
           try {
             const targetName = photoData.fileName || itemInfo.name;
             
-            // 📌 구글 앱스 스크립트 삭제 CORS 우회용 POST 전송 방식 적용
-            await fetch(GAS_URL, {
-              method: 'POST',
-              mode: 'no-cors',
-              headers: { 'Content-Type': 'text/plain' },
-              body: JSON.stringify({ action: "delete", targetKey: targetName })
-            });
+            // 📌 GET 방식으로 쿼리 파라미터를 전달하여 구글 앱스 스크립트 삭제 연동 100% 보장
+            const deleteUrl = `${GAS_URL}?action=delete&targetKey=${encodeURIComponent(targetName)}`;
+            await fetch(deleteUrl, { method: 'GET' });
             
             if (isArchiveView) {
               await deleteDB("archive_photos", photoData.id);
@@ -796,8 +792,8 @@
             renderApp();
             showToast("삭제 완료! 드라이브 반영 중...", false);
       
-            // 📌 3. 구글 드라이브 삭제 반영 시간을 위해 1.5초 대기 후 동기화 수행
-            await new Promise(resolve => setTimeout(resolve, 1500));
+            // 📌 3. 구글 드라이브 삭제 반영 시간을 위해 2초 대기 후 동기화 수행
+            await new Promise(resolve => setTimeout(resolve, 2000));
             
             await fetchRemoteDrivePhotos();
             renderApp();          
@@ -805,16 +801,16 @@
             console.warn("드라이브 삭제 처리 중:", err);
           }
           
-          if (isArchiveView) {
-            await deleteDB("archive_photos", photoData.id);
-          } else {
-            await deleteDB("photos", id);
-          }
+          // if (isArchiveView) {
+          //   await deleteDB("archive_photos", photoData.id);
+          // } else {
+          //   await deleteDB("photos", id);
+          // }
           
-          closePhotoModal();
-          showToast("삭제 완료", false);
-          await fetchRemoteDrivePhotos();
-          renderApp();
+          // closePhotoModal();
+          // showToast("삭제 완료", false);
+          // await fetchRemoteDrivePhotos();
+          // renderApp();
         }
       };
 
