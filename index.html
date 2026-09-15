@@ -592,18 +592,15 @@
       const mandatoryItems = rawData.filter(d => !d.isOptional);
       const mandatoryTotal = mandatoryItems.length;
       
-      // 1. 이번 주 필수 촬영 완료 수
       const mandatoryWeekCompleted = mandatoryItems.filter(d => photoMap.has(d.id)).length;
       const weekPercent = Math.round((mandatoryWeekCompleted / mandatoryTotal) * 100);
 
-      // 2. 이번 달 필수 촬영 완료 수 (최소 1회 이상 업로드된 수업 수)
       const mandatoryMonthCompleted = mandatoryItems.filter(d => (monthlyCountMap.get(d.id) || 0) > 0).length;
       const monthPercent = Math.round((mandatoryMonthCompleted / mandatoryTotal) * 100);
 
       const warningItems = mandatoryItems.filter(d => (monthlyCountMap.get(d.id) || 0) === 0);
       const warningCount = warningItems.length;
 
-      // 프로그레스 바 UI 갱신
       document.getElementById('progress-week-text').innerText = `📅 ${isArchiveView ? '선택 주차' : '이번 주'} 필수: ${mandatoryWeekCompleted} / ${mandatoryTotal} (${weekPercent}%)`;
       document.getElementById('progress-week-bar').style.width = `${weekPercent}%`;
 
@@ -749,7 +746,13 @@
     async function openPhotoModal(id) {
       const activeStore = isArchiveView ? "archive_photos" : "photos";
       const photos = await getAllDB(activeStore);
-      const photoData = photos.find(p => isArchiveView ? (p.originalId === id || p.id === `${currentViewingWeek}_${id}`) : p.id === id);
+      
+      // 📌 선택된 주차에 정확히 대응하는 사진 검색 로직 수정
+      const photoData = photos.find(p => isArchiveView 
+        ? (p.archiveWeek === currentViewingWeek && (p.originalId === id || p.id === `${currentViewingWeek}_${id}`))
+        : p.id === id
+      );
+      
       const itemInfo = rawData.find(r => r.id === id);
 
       if (!photoData || !itemInfo) return;
@@ -774,19 +777,24 @@
           showToast("구글 드라이브 사진 삭제 중...");
           try {
             const targetName = photoData.fileName || itemInfo.name;
+            
+            // 📌 구글 앱스 스크립트 삭제 CORS 우회용 POST 전송 방식 적용
             await fetch(GAS_URL, {
               method: 'POST',
+              mode: 'no-cors',
+              headers: { 'Content-Type': 'text/plain' },
               body: JSON.stringify({ action: "delete", targetKey: targetName })
             });
           } catch (err) {
             console.warn("드라이브 삭제 처리 중:", err);
           }
+          
           if (isArchiveView) {
-            const archiveId = photoData.id;
-            await deleteDB("archive_photos", archiveId);
+            await deleteDB("archive_photos", photoData.id);
           } else {
             await deleteDB("photos", id);
           }
+          
           closePhotoModal();
           showToast("삭제 완료", false);
           await fetchRemoteDrivePhotos();
@@ -865,6 +873,8 @@
       try {
         await fetch(GAS_URL, {
           method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'text/plain' },
           body: JSON.stringify({ fileName: fileName, programName: info.name, dataUrl: compressedDataUrl })
         });
         showToast("드라이브 저장 완료!", false);
