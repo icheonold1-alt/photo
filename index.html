@@ -79,12 +79,12 @@
 
     <!-- Day Filter Tabs -->
     <div class="max-w-md mx-auto px-4 flex gap-2 overflow-x-auto hide-scrollbar pb-3">
-      <button class="day-tab active-tab bg-white text-indigo-700 font-bold px-4 py-1.5 rounded-full text-xs shadow shrink-0" data-day="전체">전체</button>
       <button class="day-tab bg-indigo-600/70 text-white font-medium px-4 py-1.5 rounded-full text-xs shrink-0" data-day="월">월요일</button>
       <button class="day-tab bg-indigo-600/70 text-white font-medium px-4 py-1.5 rounded-full text-xs shrink-0" data-day="화">화요일</button>
       <button class="day-tab bg-indigo-600/70 text-white font-medium px-4 py-1.5 rounded-full text-xs shrink-0" data-day="수">수요일</button>
       <button class="day-tab bg-indigo-600/70 text-white font-medium px-4 py-1.5 rounded-full text-xs shrink-0" data-day="목">목요일</button>
       <button class="day-tab bg-indigo-600/70 text-white font-medium px-4 py-1.5 rounded-full text-xs shrink-0" data-day="금">금요일</button>
+      <button class="day-tab bg-indigo-600/70 text-white font-medium px-4 py-1.5 rounded-full text-xs shrink-0" data-day="전체">전체</button>
     </div>
   </header>
 
@@ -459,7 +459,9 @@
       const savedList = await getMetaDB("remoteList");
       if (savedList && Array.isArray(savedList.value)) setRemoteFileList(savedList.value);
       populateWeekSelector();
+      initDefaultDayTab();
       await renderApp();
+      scrollToCurrentTimeSlot();
 
       // 최신 목록은 뒤에서 받아오고, 끝나면 화면만 다시 그린다
       await fetchRemoteDrivePhotos();
@@ -838,6 +840,7 @@
         const isDanger = !item.isOptional && monthCount === 0;
 
         const card = document.createElement('div');
+        card.dataset.start = getStartMinutes(item.time);
         card.className = `bg-white rounded-2xl p-4 shadow-sm border transition-all ${
           isDanger 
             ? 'border-rose-400 bg-rose-50/30' 
@@ -1108,16 +1111,48 @@
       }
     });
 
+    function setActiveDayTab(day) {
+      activeDay = day;
+      document.querySelectorAll('.day-tab').forEach(t => {
+        const isActive = t.dataset.day === day;
+        t.className = isActive
+          ? "day-tab active-tab bg-white text-indigo-700 font-bold px-4 py-1.5 rounded-full text-xs shadow shrink-0"
+          : "day-tab bg-indigo-600/70 text-white font-medium px-4 py-1.5 rounded-full text-xs shrink-0";
+        if (isActive) t.scrollIntoView({ block: 'nearest', inline: 'center' });
+      });
+    }
+
     document.querySelectorAll('.day-tab').forEach(tab => {
       tab.addEventListener('click', (e) => {
-        document.querySelectorAll('.day-tab').forEach(t => {
-          t.className = "day-tab bg-indigo-600/70 text-white font-medium px-4 py-1.5 rounded-full text-xs shrink-0";
-        });
-        e.target.className = "day-tab active-tab bg-white text-indigo-700 font-bold px-4 py-1.5 rounded-full text-xs shadow shrink-0";
-        activeDay = e.target.dataset.day;
+        setActiveDayTab(e.currentTarget.dataset.day);
         renderApp();
       });
     });
+
+    // 열었을 때: 오늘 요일 탭 선택 (주말이면 전체)
+    function initDefaultDayTab() {
+      const today = ['일', '월', '화', '수', '목', '금', '토'][new Date().getDay()];
+      setActiveDayTab(['월', '화', '수', '목', '금'].includes(today) ? today : '전체');
+    }
+
+    // 열었을 때: 지금 시간대 수업이 화면 맨 위에 오도록 스크롤 (지난 시간대는 위로 스크롤하면 그대로 있음)
+    // 기준: 이미 시작했거나 10분 안에 시작하는 시간대 중 가장 늦은 것
+    function scrollToCurrentTimeSlot() {
+      if (activeDay === "전체" || isArchiveView) return;
+      const cards = [...document.querySelectorAll('#cards-container > div[data-start]')];
+      if (cards.length === 0) return;
+
+      const now = new Date();
+      const limit = now.getHours() * 60 + now.getMinutes() + 10;
+      const starts = [...new Set(cards.map(c => Number(c.dataset.start)))].sort((a, b) => a - b);
+      const slot = starts.filter(t => t <= limit).pop() ?? starts[0];
+      const target = cards.find(c => Number(c.dataset.start) === slot);
+      if (!target || target === cards[0]) return;
+
+      const headerHeight = document.querySelector('header').offsetHeight;
+      const top = target.getBoundingClientRect().top + window.scrollY - headerHeight - 8;
+      window.scrollTo({ top: Math.max(0, top), behavior: 'auto' });
+    }
 
     let searchTimer = null;
     document.getElementById('search-input').addEventListener('input', () => {
