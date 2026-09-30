@@ -222,7 +222,7 @@
   </div>
 
   <script>
-    const GAS_URL = "https://script.google.com/macros/s/AKfycbyNxbc9qlVHUa8n4ZIXR0G_D8x0pAd7xcp67krDzuqDXkY5Nj2hCmRho4KjFyw6pvCP5g/exec";
+    const GAS_URL = "https://script.google.com/macros/s/AKfycbwvv2tJ-uG_u4y8aEE54HSEA-W1m78jS_1oPiP3OKONsGGt4-lvKLj1_hvhi2u6_2RUiA/exec";
 
     const rawData = [
       { id: "P001", location: "3층큰마당", day: "월", time: "10:30~11:30", name: "교양·건강강좌", isOptional: true },
@@ -298,12 +298,23 @@
       { id: "P071", location: "지하1층작은마당", day: "수", time: "13:00~15:00", name: "청춘 실버악단(동아리)" },
       { id: "P072", location: "지하1층작은마당", day: "금", time: "13:00~14:00", name: "퓨전난타(초급)" },
       { id: "P073", location: "지하1층작은마당", day: "금", time: "14:00~15:00", name: "퓨전난타(중급)" },
-      { id: "P074", location: "지하1층작은마당", day: "금", time: "15:00~17:00", name: "난타공연반" }
+      { id: "P074", location: "지하1층작은마당", day: "금", time: "15:00~17:00", name: "난타공연반" },
+
+      // ICT지식마루 (1층) - 드라이브에는 주차 폴더 없이 "월 폴더 > ICT지식마루" 에 저장됨 (driveFolder)
+      // 같은 날 같은 이름이 겹치는 수업(스마트폰 기초/활용)은 파일명이 겹치지 않도록 시간을 붙임
+      { id: "P075", location: "ICT지식마루", day: "월", time: "10:00~12:00", name: "스마트폰(기초)오전", driveFolder: "ICT지식마루" },
+      { id: "P076", location: "ICT지식마루", day: "월", time: "13:00~15:00", name: "스마트폰(기초)오후", driveFolder: "ICT지식마루" },
+      { id: "P077", location: "ICT지식마루", day: "화", time: "10:00~12:00", name: "스마트폰(활용)오전", driveFolder: "ICT지식마루" },
+      { id: "P078", location: "ICT지식마루", day: "화", time: "13:00~15:00", name: "스마트폰(활용)오후", driveFolder: "ICT지식마루" },
+      { id: "P079", location: "ICT지식마루", day: "수", time: "10:00~12:00", name: "컴퓨터(초급A)", driveFolder: "ICT지식마루" },
+      { id: "P080", location: "ICT지식마루", day: "수", time: "13:00~15:00", name: "컴퓨터(중급)", driveFolder: "ICT지식마루" },
+      { id: "P081", location: "ICT지식마루", day: "목", time: "10:00~12:00", name: "컴퓨터(초급B)", driveFolder: "ICT지식마루" },
+      { id: "P082", location: "ICT지식마루", day: "금", time: "10:00~12:00", name: "태블릿PC", driveFolder: "ICT지식마루" }
     ];
 
     function getFloorLevel(location) {
       if (location.includes("지하1층")) return -1;
-      if (location.includes("서예실") || location.includes("1층")) return 1;
+      if (location.includes("서예실") || location.includes("ICT지식마루") || location.includes("1층")) return 1;
       if (location.includes("2층")) return 2;
       if (location.includes("3층")) return 3;
       return 99;
@@ -528,6 +539,57 @@
       });
       if (changed) savePendingDeletes();
       return hide.size ? fileList.filter(f => !hide.has(f.name)) : fileList;
+    }
+
+    // 드라이브 삭제 요청은 한 장씩 차례로 보내고, 응답을 확인해서 실패하면 다시 시도한다
+    // (여러 장을 연달아 지울 때 요청이 동시에 몰려 일부가 반영되지 않는 문제 방지)
+    const deleteQueue = [];
+    const queuedDeleteNames = new Set();
+    let deleteRunning = false;
+    let resyncTimer = null;
+
+    function enqueueDelete(name, driveFolder = "") {
+      if (queuedDeleteNames.has(name)) return;
+      queuedDeleteNames.add(name);
+      deleteQueue.push({ name, driveFolder });
+      runDeleteQueue();
+    }
+
+    async function sendDeleteWithRetry(name, driveFolder = "") {
+      const url = `${GAS_URL}?action=delete&targetKey=${encodeURIComponent(name)}` + (driveFolder ? `&driveFolder=${encodeURIComponent(driveFolder)}` : "");
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          const res = await fetch(url, { method: 'GET' });
+          const json = await res.json();
+          if (json && json.result === "success") return true;
+        } catch (err) {
+          console.warn(`드라이브 삭제 재시도 (${attempt}/3):`, name, err);
+        }
+        await new Promise(r => setTimeout(r, 1000 * attempt));
+      }
+      return false;
+    }
+
+    async function runDeleteQueue() {
+      if (deleteRunning) return;
+      deleteRunning = true;
+      let failedCount = 0;
+      while (deleteQueue.length > 0) {
+        const { name, driveFolder } = deleteQueue.shift();
+        showToast(`드라이브에서 삭제 중... (남은 ${deleteQueue.length + 1}장)`, true, 60000);
+        const ok = await sendDeleteWithRetry(name, driveFolder);
+        queuedDeleteNames.delete(name);
+        if (!ok) {
+          failedCount++;
+          removePendingDelete(name);   // 드라이브에 그대로 남아 있으므로 다음 동기화 때 다시 표시됨
+        }
+      }
+      deleteRunning = false;
+      showToast(failedCount ? `${failedCount}장은 삭제하지 못했어요. 다시 표시됩니다` : "드라이브 삭제 완료!", false, 4000);
+
+      // 전부 끝난 뒤 넉넉히 기다렸다가 최신 목록으로 정정
+      clearTimeout(resyncTimer);
+      resyncTimer = setTimeout(() => fetchRemoteDrivePhotos().then(renderApp), failedCount ? 500 : 5000);
     }
 
     let syncInFlight = null;
@@ -996,26 +1058,7 @@
           renderApp();
           showToast("구글 드라이브 사진 삭제 중...");
 
-          let deleteRequestOk = true;
-          try {
-            // 📌 GET 방식으로 쿼리 파라미터를 전달하여 구글 앱스 스크립트 삭제 연동 100% 보장
-            const deleteUrl = `${GAS_URL}?action=delete&targetKey=${encodeURIComponent(targetName)}`;
-            await fetch(deleteUrl, { method: 'GET' });
-            showToast("삭제 완료!", false);
-          } catch (err) {
-            deleteRequestOk = false;
-            console.warn("드라이브 삭제 처리 중:", err);
-          }
-
-          if (!deleteRequestOk) {
-            // 요청이 실패했다면 사진은 드라이브에 그대로 있으므로 바로 복구
-            removePendingDelete(targetName);
-            showToast("삭제 요청에 실패했어요. 사진이 다시 표시됩니다", false);
-            fetchRemoteDrivePhotos().then(renderApp);
-          } else {
-            // 드라이브 반영을 넉넉히 기다린 뒤 최신 목록으로 정정 (그 사이엔 화면을 건드리지 않음)
-            setTimeout(() => fetchRemoteDrivePhotos().then(renderApp), 5000);
-          }
+          enqueueDelete(targetName, itemInfo.driveFolder || "");   // 차례대로 전송 + 실패 시 재시도
         }
       };
 
@@ -1106,7 +1149,7 @@
           method: 'POST',
           mode: 'no-cors',
           headers: { 'Content-Type': 'text/plain' },
-          body: JSON.stringify({ fileName: fileName, programName: info.name, dataUrl: compressedDataUrl })
+          body: JSON.stringify({ fileName: fileName, programName: info.name, driveFolder: info.driveFolder || "", dataUrl: compressedDataUrl })
         });
         showToast("드라이브 저장 완료!", false);
       } catch (err) {
@@ -1279,7 +1322,9 @@
           try {
             const { data, options } = await getPhotoContent(t);
             const d = parseFileDate(t.fileName);
-            rootFolder.folder(`${d.getMonth() + 1}월 ${getWeekOfDate(d)}주차`).file(t.fileName, data, options);
+            const prog = matchProgram(t.fileName);
+            const subName = (prog && prog.driveFolder) ? prog.driveFolder : `${d.getMonth() + 1}월 ${getWeekOfDate(d)}주차`;
+            rootFolder.folder(subName).file(t.fileName, data, options);
           } catch (err) {
             failed++;
             console.warn("ZIP 제외:", t.fileName, err);
