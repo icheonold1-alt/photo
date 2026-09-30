@@ -222,7 +222,7 @@
   </div>
 
   <script>
-    const GAS_URL = "https://script.google.com/macros/s/AKfycbyClkA9vsQ1n160wc8DBdlgUVdhJpMT4upbINdQJP1guOrKRUVNbm0jbHD_Jtw5ReR09g/exec";
+    const GAS_URL = "https://script.google.com/macros/s/AKfycbyNxbc9qlVHUa8n4ZIXR0G_D8x0pAd7xcp67krDzuqDXkY5Nj2hCmRho4KjFyw6pvCP5g/exec";
 
     const rawData = [
       { id: "P001", location: "3층큰마당", day: "월", time: "10:30~11:30", name: "교양·건강강좌", isOptional: true },
@@ -416,7 +416,15 @@
     }
 
     // 파일명 → 수업 매칭 (이름이 같은 수업은 날짜의 요일로 구분)
+    const matchCache = new Map();
     function matchProgram(fileName) {
+      if (matchCache.has(fileName)) return matchCache.get(fileName);
+      const result = matchProgramUncached(fileName);
+      matchCache.set(fileName, result);
+      return result;
+    }
+
+    function matchProgramUncached(fileName) {
       const base = (fileName || "").replace(/^\d{1,2}\.\d{1,2}_/, '').replace(/\.[^.]+$/, '');
       let candidates = rawData.filter(d => d.name === base);
       if (candidates.length === 0) candidates = rawData.filter(d => (fileName || "").includes(d.name));
@@ -446,10 +454,23 @@
     dbRequest.onsuccess = async (e) => {
       db = e.target.result;
       await checkAndAutoArchiveWeekly();
-      await fetchRemoteDrivePhotos();
+
+      // 지난번에 받아둔 드라이브 목록으로 화면을 먼저 즉시 그린다
+      const savedList = await getMetaDB("remoteList");
+      if (savedList && Array.isArray(savedList.value)) setRemoteFileList(savedList.value);
       populateWeekSelector();
+      await renderApp();
+
+      // 최신 목록은 뒤에서 받아오고, 끝나면 화면만 다시 그린다
+      await fetchRemoteDrivePhotos();
       renderApp();
     };
+
+    let remoteVersion = 0;
+    function setRemoteFileList(list) {
+      remoteFileListCache = list;
+      remoteVersion++;
+    }
 
     async function checkAndAutoArchiveWeekly() {
       const realCurrentWeekKey = getMonthWeekKey();
@@ -458,9 +479,7 @@
 
       if (savedWeek && savedWeek !== realCurrentWeekKey) {
         const currentPhotos = await getAllDB("photos");
-        for (const item of currentPhotos) {
-          await putDB("archive_photos", { ...item, archiveWeek: savedWeek });
-        }
+        await putManyDB("archive_photos", currentPhotos.map(item => ({ ...item, archiveWeek: savedWeek })));
         await clearDB("photos");
         await putDB("meta", { key: "currentWeek", value: realCurrentWeekKey });
         showToast(`🎉 새로운 주차(${formatWeekTitle(realCurrentWeekKey)})가 시작되었습니다.`);
@@ -472,7 +491,14 @@
       document.getElementById('current-week-badge').innerText = formatWeekTitle(realCurrentWeekKey);
     }
 
-    async function fetchRemoteDrivePhotos() {
+    let syncInFlight = null;
+    function fetchRemoteDrivePhotos() {
+      if (syncInFlight) return syncInFlight;
+      syncInFlight = doFetchRemoteDrivePhotos().finally(() => { syncInFlight = null; });
+      return syncInFlight;
+    }
+
+    async function doFetchRemoteDrivePhotos() {
       try {
         showToast("구글 드라이브 최신 사진 동기화 중...");
         const nowDate = new Date();
@@ -481,36 +507,42 @@
         const res = await fetch(`${GAS_URL}?months=${monthsParam}&t=${Date.now()}`);
         if (!res.ok) throw new Error("서버 응답 오류");
         const fileList = await res.json();
-        remoteFileListCache = Array.isArray(fileList) ? fileList : [];
+        if (!Array.isArray(fileList)) throw new Error("목록 형식 오류");
 
-        if (Array.isArray(fileList)) {
-          const realCurrentWeekKey = getMonthWeekKey();
+        setRemoteFileList(fileList);
+        putDB("meta", { key: "remoteList", value: fileList });   // 다음 실행 때 즉시 표시용
 
-          for (const file of fileList) {
-            const info = matchProgram(file.name);
-            if (info) {
-              const pid = info.id;
-              const driveImgUrl = `https://lh3.googleusercontent.com/d/${file.id}`;
-              
-              const nameDatePart = file.name.split('_')[0]; 
-              const fileWeekKey = calculateWeekFromDateStr(nameDatePart);
-              const dateStr = `${nameDatePart} (드라이브동기화)`;
+        const realCurrentWeekKey = getMonthWeekKey();
+        const [curPhotos, archPhotos] = await Promise.all([getAllDB("photos"), getAllDB("archive_photos")]);
+        const curIds = new Set(curPhotos.map(p => p.id));
+        const archIds = new Set(archPhotos.map(p => p.id));
+        const newCur = [];
+        const newArch = [];
 
-              if (fileWeekKey === realCurrentWeekKey) {
-                const existing = await getPhotoDB("photos", pid);
-                if (!existing) {
-                  await putDB("photos", { id: pid, dataUrl: driveImgUrl, dateStr, driveId: file.id, fileName: file.name, weekKey: fileWeekKey });
-                }
-              } else {
-                const archiveId = `${fileWeekKey}_${pid}`;
-                const existingArchive = await getPhotoDB("archive_photos", archiveId);
-                if (!existingArchive) {
-                  await putDB("archive_photos", { id: archiveId, originalId: pid, dataUrl: driveImgUrl, dateStr, driveId: file.id, fileName: file.name, archiveWeek: fileWeekKey });
-                }
-              }
+        for (const file of fileList) {
+          const info = matchProgram(file.name);
+          if (!info) continue;
+          const pid = info.id;
+          const driveImgUrl = `https://lh3.googleusercontent.com/d/${file.id}`;
+          const nameDatePart = file.name.split('_')[0];
+          const fileWeekKey = calculateWeekFromDateStr(nameDatePart);
+          const dateStr = `${nameDatePart} (드라이브동기화)`;
+
+          if (fileWeekKey === realCurrentWeekKey) {
+            if (!curIds.has(pid)) {
+              curIds.add(pid);
+              newCur.push({ id: pid, dataUrl: driveImgUrl, dateStr, driveId: file.id, fileName: file.name, weekKey: fileWeekKey });
+            }
+          } else {
+            const archiveId = `${fileWeekKey}_${pid}`;
+            if (!archIds.has(archiveId)) {
+              archIds.add(archiveId);
+              newArch.push({ id: archiveId, originalId: pid, dataUrl: driveImgUrl, dateStr, driveId: file.id, fileName: file.name, archiveWeek: fileWeekKey });
             }
           }
         }
+
+        await Promise.all([putManyDB("photos", newCur), putManyDB("archive_photos", newArch)]);
         showToast("동기화 완료!", false);
       } catch (err) {
         console.warn("드라이브 동기화 참고:", err);
@@ -560,27 +592,25 @@
     }
 
     function compressImageFile(file, maxWidth = 1280, quality = 0.75) {
-      return new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          const img = new Image();
-          img.onload = () => {
-            const canvas = document.createElement('canvas');
-            let width = img.width;
-            let height = img.height;
-            if (width > maxWidth) {
-              height = Math.round((height * maxWidth) / width);
-              width = maxWidth;
-            }
-            canvas.width = width;
-            canvas.height = height;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0, width, height);
-            resolve(canvas.toDataURL('image/jpeg', quality));
-          };
-          img.src = e.target.result;
+      return new Promise((resolve, reject) => {
+        const objectUrl = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = () => {
+          let width = img.width;
+          let height = img.height;
+          if (width > maxWidth) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+          URL.revokeObjectURL(objectUrl);
+          resolve(canvas.toDataURL('image/jpeg', quality));
         };
-        reader.readAsDataURL(file);
+        img.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error("이미지 로드 실패")); };
+        img.src = objectUrl;
       });
     }
 
@@ -600,19 +630,51 @@
       });
     }
 
+    // 사진 목록은 메모리에 캐시해서 화면을 다시 그릴 때마다 DB에서 통째로 읽지 않는다
+    const dbCache = {};
+    const CACHED_STORES = ["photos", "archive_photos"];
+
+    function cacheUpsert(storeName, item) {
+      const list = dbCache[storeName];
+      if (!list) return;
+      const idx = list.findIndex(x => x.id === item.id);
+      if (idx >= 0) list[idx] = item; else list.push(item);
+    }
+
     function putDB(storeName, item) {
       return new Promise((resolve) => {
         const tx = db.transaction(storeName, "readwrite");
         tx.objectStore(storeName).put(item);
-        tx.oncomplete = () => resolve();
+        tx.oncomplete = () => {
+          if (CACHED_STORES.includes(storeName)) cacheUpsert(storeName, item);
+          resolve();
+        };
+      });
+    }
+
+    function putManyDB(storeName, items) {
+      if (!items.length) return Promise.resolve();
+      return new Promise((resolve) => {
+        const tx = db.transaction(storeName, "readwrite");
+        const store = tx.objectStore(storeName);
+        items.forEach(item => store.put(item));
+        tx.oncomplete = () => {
+          if (CACHED_STORES.includes(storeName)) items.forEach(item => cacheUpsert(storeName, item));
+          resolve();
+        };
       });
     }
 
     function getAllDB(storeName) {
+      if (dbCache[storeName]) return Promise.resolve(dbCache[storeName].slice());
       return new Promise((resolve) => {
         const tx = db.transaction(storeName, "readonly");
         const req = tx.objectStore(storeName).getAll();
-        req.onsuccess = () => resolve(req.result || []);
+        req.onsuccess = () => {
+          const result = req.result || [];
+          if (CACHED_STORES.includes(storeName)) dbCache[storeName] = result;
+          resolve(result.slice());
+        };
       });
     }
 
@@ -620,7 +682,10 @@
       return new Promise((resolve) => {
         const tx = db.transaction(storeName, "readwrite");
         tx.objectStore(storeName).delete(id);
-        tx.oncomplete = () => resolve();
+        tx.oncomplete = () => {
+          if (dbCache[storeName]) dbCache[storeName] = dbCache[storeName].filter(x => x.id !== id);
+          resolve();
+        };
       });
     }
 
@@ -628,19 +693,46 @@
       return new Promise((resolve) => {
         const tx = db.transaction(storeName, "readwrite");
         tx.objectStore(storeName).clear();
-        tx.oncomplete = () => resolve();
+        tx.oncomplete = () => {
+          if (dbCache[storeName]) dbCache[storeName] = [];
+          resolve();
+        };
       });
+    }
+
+    // 드라이브 목록에서 수업별 월간 촬영 횟수 (목록/월이 바뀔 때만 다시 계산)
+    let monthlyCountCache = { key: null, map: null };
+    function getMonthlyCountMap(viewingMonthKey) {
+      const cacheKey = `${remoteVersion}|${viewingMonthKey}`;
+      if (monthlyCountCache.key === cacheKey) return monthlyCountCache.map;
+      const map = new Map();
+      remoteFileListCache.forEach(file => {
+        const fileDate = parseFileDate(file.name);
+        if (!fileDate || monthKeyOf(fileDate) !== viewingMonthKey) return;
+        const item = matchProgram(file.name);
+        if (item) map.set(item.id, (map.get(item.id) || 0) + 1);
+      });
+      monthlyCountCache = { key: cacheKey, map };
+      return map;
+    }
+
+    // 드라이브 사진은 카드에서 작은 크기로, 크게 보기에서만 원본으로
+    function thumbUrl(url) {
+      return (url && url.startsWith("https://lh3.googleusercontent.com/d/") && !url.includes("=")) ? url + "=w640" : url;
     }
 
     let activeDay = "전체";
     let activeTargetId = null;
 
+    let renderSeq = 0;
     async function renderApp() {
+      const mySeq = ++renderSeq;
       const realCurrentWeekKey = getMonthWeekKey();
       isArchiveView = (currentViewingWeek !== realCurrentWeekKey);
 
       const activeStore = isArchiveView ? "archive_photos" : "photos";
       const photosList = await getAllDB(activeStore);
+      if (mySeq !== renderSeq) return;   // 더 최신 렌더가 이미 시작됨
 
       const photoMap = new Map();
       photosList.forEach(item => {
@@ -661,13 +753,7 @@
       const isCurrentMonthView = (viewing.year === now.getFullYear() && viewing.month === now.getMonth() + 1);
       const monthLabel = isCurrentMonthView ? '이번 달' : `${viewing.month}월`;
 
-      const monthlyCountMap = new Map();
-      remoteFileListCache.forEach(file => {
-        const fileDate = parseFileDate(file.name);
-        if (!fileDate || monthKeyOf(fileDate) !== viewingMonthKey) return;
-        const item = matchProgram(file.name);
-        if (item) monthlyCountMap.set(item.id, (monthlyCountMap.get(item.id) || 0) + 1);
-      });
+      const monthlyCountMap = getMonthlyCountMap(viewingMonthKey);
 
       const mandatoryItems = rawData.filter(d => !d.isOptional);
       const mandatoryTotal = mandatoryItems.length;
@@ -733,7 +819,7 @@
       });
 
       const container = document.getElementById('cards-container');
-      container.innerHTML = '';
+      const fragment = document.createDocumentFragment();
 
       if (filtered.length === 0) {
         container.innerHTML = `
@@ -791,7 +877,7 @@
 
           ${isCompleted ? `
             <div class="mt-3 relative rounded-xl overflow-hidden border border-slate-300 bg-slate-900 aspect-video group cursor-pointer shadow-inner" onclick="openPhotoModal('${item.id}')">
-              <img src="${photoData.dataUrl}" alt="${item.name}" class="w-full h-full object-cover">
+              <img src="${thumbUrl(photoData.dataUrl)}" data-full="${photoData.dataUrl}" onerror="if(!this.dataset.fb){this.dataset.fb=1;this.src=this.dataset.full}" loading="lazy" decoding="async" alt="${item.name}" class="w-full h-full object-cover">
               
               <div class="absolute inset-0 bg-black/30 group-hover:bg-black/40 transition flex flex-col justify-between p-3 text-white">
                 <div class="flex justify-between items-center">
@@ -813,8 +899,9 @@
             </button>
           `}
         `;
-        container.appendChild(card);
+        fragment.appendChild(card);
       });
+      container.replaceChildren(fragment);
     }
 
     function exitArchiveView() {
@@ -854,43 +941,30 @@
 
       deleteBtn.onclick = async () => {
         if (confirm('구글 드라이브 및 스마트폰에서 이 사진을 완전 삭제하시겠습니까?')) {
+          const targetName = photoData.fileName || itemInfo.name;
+
+          // 화면부터 즉시 갱신 (기기 저장분 + 월 집계 목록에서 먼저 제거)
+          if (isArchiveView) {
+            await deleteDB("archive_photos", photoData.id);
+          } else {
+            await deleteDB("photos", id);
+          }
+          setRemoteFileList(remoteFileListCache.filter(f => f.name !== targetName));
+          closePhotoModal();
+          renderApp();
           showToast("구글 드라이브 사진 삭제 중...");
+
           try {
-            const targetName = photoData.fileName || itemInfo.name;
-            
             // 📌 GET 방식으로 쿼리 파라미터를 전달하여 구글 앱스 스크립트 삭제 연동 100% 보장
             const deleteUrl = `${GAS_URL}?action=delete&targetKey=${encodeURIComponent(targetName)}`;
             await fetch(deleteUrl, { method: 'GET' });
-            
-            if (isArchiveView) {
-              await deleteDB("archive_photos", photoData.id);
-            } else {
-              await deleteDB("photos", id);
-            }
-      
-            closePhotoModal();
-            renderApp();
-            showToast("삭제 완료! 드라이브 반영 중...", false);
-      
-            // 📌 3. 구글 드라이브 삭제 반영 시간을 위해 2초 대기 후 동기화 수행
-            await new Promise(resolve => setTimeout(resolve, 2000));
-            
-            await fetchRemoteDrivePhotos();
-            renderApp();          
+            showToast("삭제 완료!", false);
           } catch (err) {
             console.warn("드라이브 삭제 처리 중:", err);
           }
-          
-          // if (isArchiveView) {
-          //   await deleteDB("archive_photos", photoData.id);
-          // } else {
-          //   await deleteDB("photos", id);
-          // }
-          
-          // closePhotoModal();
-          // showToast("삭제 완료", false);
-          // await fetchRemoteDrivePhotos();
-          // renderApp();
+
+          // 삭제가 끝난 뒤 최신 목록으로 정정 (Apps Script 는 삭제가 끝나야 응답하므로 대기 불필요)
+          fetchRemoteDrivePhotos().then(renderApp);
         }
       };
 
@@ -932,36 +1006,48 @@
 
     async function handleFileSelected(file) {
       if (!file || !activeTargetId) return;
-      const info = rawData.find(r => r.id === activeTargetId);
+      const targetId = activeTargetId;
+      activeTargetId = null;   // 업로드가 끝나기 전에 다른 수업을 바로 이어서 등록할 수 있게 즉시 해제
+      const info = rawData.find(r => r.id === targetId);
       if (!info) return;
 
-      showToast("이미지 고화질 압축 중...");
-      const compressedDataUrl = await compressImageFile(file);
-      
+      showToast("이미지 압축 중...");
+      let compressedDataUrl;
+      try {
+        compressedDataUrl = await compressImageFile(file);
+      } catch (err) {
+        showToast("이미지를 불러오지 못했습니다", false);
+        return;
+      }
+
       const now = new Date();
       const timeStr = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
-      
-      const calculatedDateStr = calculateClassDateStr(currentViewingWeek, info.day);
+
+      const uploadWeek = currentViewingWeek;
+      const calculatedDateStr = calculateClassDateStr(uploadWeek, info.day);
       const fileName = `${calculatedDateStr}_${info.name}.jpg`;
       const dateStr = `${calculatedDateStr} ${timeStr}`;
 
       if (isArchiveView) {
-        const archiveId = `${currentViewingWeek}_${activeTargetId}`;
         await putDB("archive_photos", {
-          id: archiveId,
-          originalId: activeTargetId,
+          id: `${uploadWeek}_${targetId}`,
+          originalId: targetId,
           dataUrl: compressedDataUrl,
           dateStr,
           fileName,
-          archiveWeek: currentViewingWeek
+          archiveWeek: uploadWeek
         });
       } else {
-        await putDB("photos", { id: activeTargetId, dataUrl: compressedDataUrl, dateStr, fileName, weekKey: getMonthWeekKey() });
+        await putDB("photos", { id: targetId, dataUrl: compressedDataUrl, dateStr, fileName, weekKey: getMonthWeekKey() });
+      }
+
+      // 월 집계에도 바로 반영 (같은 이름이면 다시 세지 않음) → 화면 즉시 갱신
+      if (!remoteFileListCache.some(f => f.name === fileName)) {
+        setRemoteFileList([...remoteFileListCache, { name: fileName, id: "", folder: "" }]);
       }
       renderApp();
 
-      showToast("구글 드라이브 초고속 전송 중...");
-
+      showToast("구글 드라이브 전송 중...", true, 60000);
       try {
         await fetch(GAS_URL, {
           method: 'POST',
@@ -972,12 +1058,10 @@
         showToast("드라이브 저장 완료!", false);
       } catch (err) {
         console.warn("드라이브 전송 완료:", err);
-      } finally {
-        await fetchRemoteDrivePhotos();
-        renderApp();
       }
 
-      activeTargetId = null;
+      // 전송이 끝난 뒤 최신 목록으로 정정 (화면은 이미 갱신돼 있으므로 기다리지 않음)
+      fetchRemoteDrivePhotos().then(renderApp);
     }
 
     document.getElementById('camera-input').addEventListener('change', function(e) {
@@ -1035,7 +1119,11 @@
       });
     });
 
-    document.getElementById('search-input').addEventListener('input', renderApp);
+    let searchTimer = null;
+    document.getElementById('search-input').addEventListener('input', () => {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(renderApp, 120);
+    });
     document.getElementById('status-filter').addEventListener('change', renderApp);
 
     function getMonthTarget(which) {
