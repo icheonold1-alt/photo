@@ -457,7 +457,9 @@
 
       // 지난번에 받아둔 드라이브 목록으로 화면을 먼저 즉시 그린다
       const savedList = await getMetaDB("remoteList");
-      if (savedList && Array.isArray(savedList.value)) setRemoteFileList(savedList.value);
+      const savedPending = await getMetaDB("pendingDeletes");
+      if (savedPending && savedPending.value) pendingDeletes = savedPending.value;
+      if (savedList && Array.isArray(savedList.value)) setRemoteFileList(applyPendingDeletes(savedList.value));
       populateWeekSelector();
       initDefaultDayTab();
       await renderApp();
@@ -493,6 +495,41 @@
       document.getElementById('current-week-badge').innerText = formatWeekTitle(realCurrentWeekKey);
     }
 
+    // 방금 삭제한 사진은 드라이브 목록에 잠깐 더 남아 있어도 다시 살리지 않는다
+    // (드라이브 삭제 반영에 시간이 걸리거나, 삭제 전에 시작된 동기화가 옛 목록을 가져오는 경우 대비)
+    const DELETE_GRACE_MS = 2 * 60 * 1000;
+    let pendingDeletes = {};   // { 파일명: 삭제 시각(ms) }
+
+    function savePendingDeletes() {
+      putDB("meta", { key: "pendingDeletes", value: pendingDeletes });
+    }
+
+    function addPendingDelete(name) {
+      pendingDeletes[name] = Date.now();
+      savePendingDeletes();
+    }
+
+    function removePendingDelete(name) {
+      delete pendingDeletes[name];
+      savePendingDeletes();
+    }
+
+    // 드라이브 목록에서 삭제 예정 파일을 걸러내고, 드라이브에서 사라졌거나 시간이 지난 항목은 정리
+    function applyPendingDeletes(fileList) {
+      const names = Object.keys(pendingDeletes);
+      if (names.length === 0) return fileList;
+      const present = new Set(fileList.map(f => f.name));
+      const hide = new Set();
+      let changed = false;
+      names.forEach(name => {
+        const expired = Date.now() - pendingDeletes[name] > DELETE_GRACE_MS;
+        if (!present.has(name) || expired) { delete pendingDeletes[name]; changed = true; }
+        else hide.add(name);
+      });
+      if (changed) savePendingDeletes();
+      return hide.size ? fileList.filter(f => !hide.has(f.name)) : fileList;
+    }
+
     let syncInFlight = null;
     function fetchRemoteDrivePhotos() {
       if (syncInFlight) return syncInFlight;
@@ -508,8 +545,9 @@
         const monthsParam = `${prevM.year}-${prevM.month},${nowDate.getFullYear()}-${nowDate.getMonth() + 1}`;
         const res = await fetch(`${GAS_URL}?months=${monthsParam}&t=${Date.now()}`);
         if (!res.ok) throw new Error("서버 응답 오류");
-        const fileList = await res.json();
-        if (!Array.isArray(fileList)) throw new Error("목록 형식 오류");
+        const rawList = await res.json();
+        if (!Array.isArray(rawList)) throw new Error("목록 형식 오류");
+        const fileList = applyPendingDeletes(rawList);
 
         setRemoteFileList(fileList);
         putDB("meta", { key: "remoteList", value: fileList });   // 다음 실행 때 즉시 표시용
@@ -945,6 +983,7 @@
       deleteBtn.onclick = async () => {
         if (confirm('구글 드라이브 및 스마트폰에서 이 사진을 완전 삭제하시겠습니까?')) {
           const targetName = photoData.fileName || itemInfo.name;
+          addPendingDelete(targetName);   // 가장 먼저 표시: 진행 중이던 동기화가 이 사진을 다시 살리지 못하게
 
           // 화면부터 즉시 갱신 (기기 저장분 + 월 집계 목록에서 먼저 제거)
           if (isArchiveView) {
@@ -957,17 +996,26 @@
           renderApp();
           showToast("구글 드라이브 사진 삭제 중...");
 
+          let deleteRequestOk = true;
           try {
             // 📌 GET 방식으로 쿼리 파라미터를 전달하여 구글 앱스 스크립트 삭제 연동 100% 보장
             const deleteUrl = `${GAS_URL}?action=delete&targetKey=${encodeURIComponent(targetName)}`;
             await fetch(deleteUrl, { method: 'GET' });
             showToast("삭제 완료!", false);
           } catch (err) {
+            deleteRequestOk = false;
             console.warn("드라이브 삭제 처리 중:", err);
           }
 
-          // 삭제가 끝난 뒤 최신 목록으로 정정 (Apps Script 는 삭제가 끝나야 응답하므로 대기 불필요)
-          fetchRemoteDrivePhotos().then(renderApp);
+          if (!deleteRequestOk) {
+            // 요청이 실패했다면 사진은 드라이브에 그대로 있으므로 바로 복구
+            removePendingDelete(targetName);
+            showToast("삭제 요청에 실패했어요. 사진이 다시 표시됩니다", false);
+            fetchRemoteDrivePhotos().then(renderApp);
+          } else {
+            // 드라이브 반영을 넉넉히 기다린 뒤 최신 목록으로 정정 (그 사이엔 화면을 건드리지 않음)
+            setTimeout(() => fetchRemoteDrivePhotos().then(renderApp), 5000);
+          }
         }
       };
 
@@ -1043,6 +1091,8 @@
       } else {
         await putDB("photos", { id: targetId, dataUrl: compressedDataUrl, dateStr, fileName, weekKey: getMonthWeekKey() });
       }
+
+      if (pendingDeletes[fileName]) removePendingDelete(fileName);   // 지웠던 사진을 같은 이름으로 다시 올린 경우
 
       // 월 집계에도 바로 반영 (같은 이름이면 다시 세지 않음) → 화면 즉시 갱신
       if (!remoteFileListCache.some(f => f.name === fileName)) {
