@@ -166,10 +166,19 @@
           </button>
         </div>
 
-        <button id="menu-download-btn" class="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-2xl text-xs shadow flex items-center justify-between transition">
-          <span class="flex items-center gap-2"><i class="fa-solid fa-file-zipper text-base"></i> <span id="menu-zip-label">현재 조회 중인 사진 ZIP 다운로드</span></span>
-          <i class="fa-solid fa-chevron-right text-xs opacity-70"></i>
-        </button>
+        <div class="bg-emerald-50 border border-emerald-100 p-3 rounded-2xl space-y-1.5">
+          <label class="text-xs font-bold text-emerald-900 flex items-center gap-1.5">
+            <i class="fa-solid fa-file-zipper text-emerald-600"></i> 월별 전체 사진 ZIP 다운로드
+          </label>
+          <div class="grid grid-cols-2 gap-2">
+            <button id="zip-this-month-btn" class="py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition">
+              <span id="zip-this-month-label">이번 달</span>
+            </button>
+            <button id="zip-last-month-btn" class="py-2.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border border-emerald-300 font-bold rounded-xl text-xs transition">
+              <span id="zip-last-month-label">지난 달</span>
+            </button>
+          </div>
+        </div>
 
         <button id="menu-sync-btn" class="w-full py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-2xl text-xs flex items-center justify-between transition">
           <span class="flex items-center gap-2"><i class="fa-solid fa-rotate text-indigo-600"></i> 구글 드라이브 동기화</span>
@@ -356,12 +365,69 @@
       return `${targetDate.getMonth() + 1}.${String(targetDate.getDate()).padStart(2, '0')}`;
     }
 
+    // 파일명에는 연도가 없으므로 오늘 기준 가장 가까운 연도로 추정
+    // (오늘보다 45일 넘게 미래면 작년 날짜로 봄. 예: 1월에 보이는 12.30 → 작년)
+    function inferDateFromMD(month, day) {
+      const now = new Date();
+      let d = new Date(now.getFullYear(), month - 1, day);
+      if (d.getTime() - now.getTime() > 45 * 24 * 60 * 60 * 1000) {
+        d = new Date(now.getFullYear() - 1, month - 1, day);
+      }
+      return d;
+    }
+
+    function parseFileDate(fileName) {
+      const m = /^(\d{1,2})\.(\d{1,2})_/.exec(fileName || "");
+      if (!m) return null;
+      const month = Number(m[1]), day = Number(m[2]);
+      if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+      return inferDateFromMD(month, day);
+    }
+
     function calculateWeekFromDateStr(dateStr) {
       if (!dateStr || !dateStr.includes('.')) return getMonthWeekKey();
       const [month, day] = dateStr.split('.').map(Number);
-      const now = new Date();
-      const targetDate = new Date(now.getFullYear(), month - 1, day);
-      return getMonthWeekKey(targetDate);
+      return getMonthWeekKey(inferDateFromMD(month, day));
+    }
+
+    function parseWeekKey(weekKey) {
+      const p = weekKey.split('-');
+      return { year: parseInt(p[0], 10), month: parseInt(p[1], 10), week: parseInt(p[2].replace('W', ''), 10) };
+    }
+
+    function monthKeyOf(date) {
+      return `${date.getFullYear()}-${date.getMonth() + 1}`;
+    }
+
+    function shiftMonth(year, month, delta) {
+      const d = new Date(year, month - 1 + delta, 1);
+      return { year: d.getFullYear(), month: d.getMonth() + 1 };
+    }
+
+    function getWeekOfDate(date) {
+      return parseInt(getMonthWeekKey(date).split('-W')[1], 10);
+    }
+
+    // 해당 월의 (월~금 수업이 있는) 마지막 주차 번호
+    function getWeeksInMonth(year, month) {
+      const d = new Date(year, month, 0);
+      while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() - 1);
+      return getWeekOfDate(d);
+    }
+
+    // 파일명 → 수업 매칭 (이름이 같은 수업은 날짜의 요일로 구분)
+    function matchProgram(fileName) {
+      const base = (fileName || "").replace(/^\d{1,2}\.\d{1,2}_/, '').replace(/\.[^.]+$/, '');
+      let candidates = rawData.filter(d => d.name === base);
+      if (candidates.length === 0) candidates = rawData.filter(d => (fileName || "").includes(d.name));
+      if (candidates.length <= 1) return candidates[0] || null;
+      const date = parseFileDate(fileName);
+      if (date) {
+        const dayChar = ['일', '월', '화', '수', '목', '금', '토'][date.getDay()];
+        const byDay = candidates.find(d => d.day === dayChar);
+        if (byDay) return byDay;
+      }
+      return candidates[0];
     }
 
     let db;
@@ -409,7 +475,10 @@
     async function fetchRemoteDrivePhotos() {
       try {
         showToast("구글 드라이브 최신 사진 동기화 중...");
-        const res = await fetch(GAS_URL);
+        const nowDate = new Date();
+        const prevM = shiftMonth(nowDate.getFullYear(), nowDate.getMonth() + 1, -1);
+        const monthsParam = `${prevM.year}-${prevM.month},${nowDate.getFullYear()}-${nowDate.getMonth() + 1}`;
+        const res = await fetch(`${GAS_URL}?months=${monthsParam}&t=${Date.now()}`);
         if (!res.ok) throw new Error("서버 응답 오류");
         const fileList = await res.json();
         remoteFileListCache = Array.isArray(fileList) ? fileList : [];
@@ -418,7 +487,7 @@
           const realCurrentWeekKey = getMonthWeekKey();
 
           for (const file of fileList) {
-            const info = rawData.find(d => file.name.includes(d.name));
+            const info = matchProgram(file.name);
             if (info) {
               const pid = info.id;
               const driveImgUrl = `https://lh3.googleusercontent.com/d/${file.id}`;
@@ -451,35 +520,43 @@
     function populateWeekSelector() {
       const selector = document.getElementById('week-selector');
       selector.innerHTML = '';
-      
+
       const now = new Date();
       const currentWeekKey = getMonthWeekKey(now);
-      const weeks = [];
+      const thisM = { year: now.getFullYear(), month: now.getMonth() + 1, label: '이번 달' };
+      const lastM = { ...shiftMonth(thisM.year, thisM.month, -1), label: '지난 달' };
 
-      for (let w = 1; w <= 5; w++) {
-        const key = `${now.getFullYear()}-${now.getMonth()+1}-W${String(w).padStart(2, '0')}`;
-        weeks.push(key);
-      }
+      [thisM, lastM].forEach(m => {
+        const group = document.createElement('optgroup');
+        group.label = `${m.label} (${m.year}년 ${m.month}월)`;
 
-      weeks.forEach(wKey => {
-        const opt = document.createElement('option');
-        opt.value = wKey;
-        opt.innerText = formatWeekTitle(wKey) + (wKey === currentWeekKey ? " (현재 이번 주)" : "");
-        if (wKey === currentViewingWeek) opt.selected = true;
-        selector.appendChild(opt);
+        let weekCount = getWeeksInMonth(m.year, m.month);
+        if (m === thisM) weekCount = Math.max(weekCount, parseWeekKey(currentWeekKey).week);
+
+        for (let w = 1; w <= weekCount; w++) {
+          const key = `${m.year}-${m.month}-W${String(w).padStart(2, '0')}`;
+          const opt = document.createElement('option');
+          opt.value = key;
+          opt.innerText = formatWeekTitle(key) + (key === currentWeekKey ? " (현재 이번 주)" : "");
+          if (key === currentViewingWeek) opt.selected = true;
+          group.appendChild(opt);
+        }
+        selector.appendChild(group);
       });
     }
 
-    function showToast(msg, isLoading = true) {
+    let toastTimer = null;
+    function showToast(msg, isLoading = true, duration = 2500) {
       const toast = document.getElementById('toast');
       const icon = document.getElementById('toast-icon');
       const text = document.getElementById('toast-msg');
       text.innerText = msg;
       icon.className = isLoading ? "fa-solid fa-spinner fa-spin text-emerald-400" : "fa-solid fa-circle-check text-emerald-400";
       toast.classList.remove('opacity-0', 'pointer-events-none');
-      setTimeout(() => {
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => {
         toast.classList.add('opacity-0', 'pointer-events-none');
-      }, 2500);
+      }, duration);
     }
 
     function compressImageFile(file, maxWidth = 1280, quality = 0.75) {
@@ -577,16 +654,19 @@
       });
 
       const now = new Date();
-      const currentMonthNum = now.getMonth() + 1;
+      // 지금 보고 있는 주차가 속한 달 기준으로 집계 (달이 바뀌면 새로 0부터)
+      const viewing = parseWeekKey(currentViewingWeek);
+      const currentMonthNum = viewing.month;
+      const viewingMonthKey = `${viewing.year}-${viewing.month}`;
+      const isCurrentMonthView = (viewing.year === now.getFullYear() && viewing.month === now.getMonth() + 1);
+      const monthLabel = isCurrentMonthView ? '이번 달' : `${viewing.month}월`;
 
       const monthlyCountMap = new Map();
       remoteFileListCache.forEach(file => {
-        rawData.forEach(item => {
-          if (file.name.includes(item.name)) {
-            const count = monthlyCountMap.get(item.id) || 0;
-            monthlyCountMap.set(item.id, count + 1);
-          }
-        });
+        const fileDate = parseFileDate(file.name);
+        if (!fileDate || monthKeyOf(fileDate) !== viewingMonthKey) return;
+        const item = matchProgram(file.name);
+        if (item) monthlyCountMap.set(item.id, (monthlyCountMap.get(item.id) || 0) + 1);
       });
 
       const mandatoryItems = rawData.filter(d => !d.isOptional);
@@ -607,7 +687,7 @@
       document.getElementById('progress-month-text').innerText = `🗓️ ${currentMonthNum}월 누적 필수: ${mandatoryMonthCompleted} / ${mandatoryTotal} (${monthPercent}%)`;
       document.getElementById('progress-month-bar').style.width = `${monthPercent}%`;
       
-      document.getElementById('warning-count-badge').innerText = `이번 달 0회 ${warningCount}개`;
+      document.getElementById('warning-count-badge').innerText = `${monthLabel} 0회 ${warningCount}개`;
 
       const banner = document.getElementById('archive-banner');
       if (isArchiveView) {
@@ -958,49 +1038,99 @@
     document.getElementById('search-input').addEventListener('input', renderApp);
     document.getElementById('status-filter').addEventListener('change', renderApp);
 
-    document.getElementById('menu-download-btn').addEventListener('click', async () => {
-      document.getElementById('menu-modal').classList.add('hidden');
-      const activeStore = isArchiveView ? "archive_photos" : "photos";
-      const photos = await getAllDB(activeStore);
-      
-      const filteredPhotos = photos.filter(item => isArchiveView ? item.archiveWeek === currentViewingWeek : true);
+    function getMonthTarget(which) {
+      const now = new Date();
+      return which === 'last'
+        ? shiftMonth(now.getFullYear(), now.getMonth() + 1, -1)
+        : { year: now.getFullYear(), month: now.getMonth() + 1 };
+    }
 
-      if (filteredPhotos.length === 0) {
-        alert('다운로드할 사진이 없습니다!');
+    function updateZipButtonLabels() {
+      document.getElementById('zip-this-month-label').innerText = `이번 달 (${getMonthTarget('this').month}월)`;
+      document.getElementById('zip-last-month-label').innerText = `지난 달 (${getMonthTarget('last').month}월)`;
+    }
+    updateZipButtonLabels();
+
+    async function downloadMonthZip(which) {
+      document.getElementById('menu-modal').classList.add('hidden');
+      const { year, month } = getMonthTarget(which);
+      const monthKey = `${year}-${month}`;
+
+      showToast(`${month}월 사진 목록 확인 중...`, true, 60000);
+      await fetchRemoteDrivePhotos();
+
+      // 드라이브에 있는 해당 월 사진 (파일명 기준 중복 제거)
+      const targets = new Map();
+      remoteFileListCache.forEach(f => {
+        const d = parseFileDate(f.name);
+        if (d && monthKeyOf(d) === monthKey) targets.set(f.name, { fileName: f.name, driveId: f.id });
+      });
+      const list = [...targets.values()];
+
+      if (list.length === 0) {
+        showToast("확인 완료", false);
+        alert(`${month}월에 다운로드할 사진이 없습니다!`);
         return;
       }
 
-      showToast("ZIP 압축 생성 중...");
-      const zip = new JSZip();
-      const folderName = `${formatWeekTitle(currentViewingWeek)}_수업사진`;
-      const folder = zip.folder(folderName);
+      // 이 기기에서 방금 찍은 사진은 이미 갖고 있으므로 재다운로드 생략
+      const [curPhotos, archPhotos] = await Promise.all([getAllDB("photos"), getAllDB("archive_photos")]);
+      const localByName = new Map();
+      [...curPhotos, ...archPhotos].forEach(p => {
+        if (p.fileName && p.dataUrl && p.dataUrl.startsWith("data:image")) localByName.set(p.fileName, p.dataUrl);
+      });
 
-      for (const item of filteredPhotos) {
-        const info = rawData.find(d => d.id === (item.originalId || item.id));
-        if (info) {
-          const fileName = item.fileName || `${info.name}.jpg`;
-          
-          if (item.dataUrl.startsWith("data:image")) {
-            const base64Data = item.dataUrl.split(',')[1];
-            folder.file(fileName, base64Data, { base64: true });
-          } else {
-            try {
-              const imgRes = await fetch(item.dataUrl);
-              const blob = await imgRes.blob();
-              folder.file(fileName, blob);
-            } catch (err) {
-              console.warn("ZIP 변환 참고:", fileName);
-            }
-          }
+      async function getPhotoContent(t) {
+        const local = localByName.get(t.fileName);
+        if (local) return { data: local.split(',')[1], options: { base64: true } };
+        try {
+          const r = await fetch(`https://lh3.googleusercontent.com/d/${t.driveId}`);
+          if (!r.ok) throw new Error("HTTP " + r.status);
+          return { data: await r.blob(), options: {} };
+        } catch (e1) {
+          // 예비 경로: Apps Script 로 받기
+          const r2 = await fetch(`${GAS_URL}?action=getFile&id=${encodeURIComponent(t.driveId)}`);
+          const j = await r2.json();
+          if (!j.base64) throw new Error(j.error || "getFile 실패");
+          return { data: j.base64, options: { base64: true } };
         }
       }
 
-      const content = await zip.generateAsync({ type: "blob" });
-      const zipFileName = `장수대학_${formatWeekTitle(currentViewingWeek)}_사진.zip`;
+      const zip = new JSZip();
+      const rootFolder = zip.folder(`장수대학_${year}년_${month}월_수업사진`);
+      let done = 0, failed = 0, idx = 0;
 
-      saveAs(content, zipFileName);
-      showToast("ZIP 다운로드 시작!", false);
-    });
+      async function worker() {
+        while (idx < list.length) {
+          const t = list[idx++];
+          try {
+            const { data, options } = await getPhotoContent(t);
+            const d = parseFileDate(t.fileName);
+            rootFolder.folder(`${d.getMonth() + 1}월 ${getWeekOfDate(d)}주차`).file(t.fileName, data, options);
+          } catch (err) {
+            failed++;
+            console.warn("ZIP 제외:", t.fileName, err);
+          }
+          done++;
+          showToast(`ZIP 준비 중... (${done}/${list.length})`, true, 60000);
+        }
+      }
+      await Promise.all(Array.from({ length: 5 }, worker));
+
+      if (failed === list.length) {
+        showToast("ZIP 생성 실패", false);
+        alert('사진을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.');
+        return;
+      }
+
+      showToast("ZIP 파일 생성 중...", true, 60000);
+      const content = await zip.generateAsync({ type: "blob" });
+      saveAs(content, `장수대학_${year}년_${month}월_사진.zip`);
+      showToast(failed ? `ZIP 다운로드 시작! (${failed}장 제외됨)` : "ZIP 다운로드 시작!", false);
+    }
+
+    document.getElementById('zip-this-month-btn').addEventListener('click', () => downloadMonthZip('this'));
+    document.getElementById('zip-last-month-btn').addEventListener('click', () => downloadMonthZip('last'));
   </script>
 </body>
 </html>
