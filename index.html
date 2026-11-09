@@ -1376,92 +1376,107 @@
       document.getElementById('golf-modal').classList.add('hidden');
     }
 
-    async function fetchGolfReservations() {
-      const container = document.getElementById('golf-list-container');
-      const dateBadge = document.getElementById('golf-date-badge');
-      
+async function fetchGolfReservations() {
+  const container = document.getElementById('golf-list-container');
+  const dateBadge = document.getElementById('golf-date-badge');
+  
+  container.innerHTML = `
+    <div class="text-center py-8 text-slate-400 text-sm">
+      <i class="fa-solid fa-spinner fa-spin text-2xl mb-2 text-emerald-600"></i>
+      <p>엔컴 서버에서 예약 명단을 불러오는 중...</p>
+    </div>
+  `;
+
+  try {
+    const response = await fetch(GOLF_API_URL);
+    if (!response.ok) throw new Error("서버 응답 에러");
+    
+    const result = await response.json();
+
+    // 📌 백엔드(GAS)에서 에러 객체를 반환한 경우 처리
+    if (result.error) {
+      dateBadge.innerText = "조회 실패";
       container.innerHTML = `
-        <div class="text-center py-8 text-slate-400 text-sm">
-          <i class="fa-solid fa-spinner fa-spin text-2xl mb-2 text-emerald-600"></i>
-          <p>엔컴 서버에서 예약 명단을 불러오는 중...</p>
+        <div class="bg-rose-50 border border-rose-200 rounded-2xl p-5 text-center text-rose-700">
+          <i class="fa-solid fa-triangle-exclamation text-3xl mb-2 text-rose-500"></i>
+          <p class="text-xs font-bold mb-1">백엔드 오류 발생</p>
+          <p class="text-[11px] text-rose-600 bg-rose-100 p-2 rounded-lg font-mono break-all">${result.message || JSON.stringify(result)}</p>
         </div>
       `;
-
-      try {
-        const response = await fetch(GOLF_API_URL);
-        if (!response.ok) throw new Error("서버 응답 에러");
-        
-        const result = await response.json();
-        dateBadge.innerText = `조회 날짜: ${result.date}`;
-
-        if (!result.data || result.data.length === 0) {
-          container.innerHTML = `
-            <div class="bg-white rounded-2xl p-6 text-center text-slate-400 border border-slate-200">
-              <i class="fa-solid fa-calendar-xmark text-3xl mb-2 text-slate-300"></i>
-              <p class="text-sm font-semibold">예약된 명단이 없습니다.</p>
-            </div>
-          `;
-          return;
-        }
-
-        container.innerHTML = "";
-        
-        result.data.forEach(slot => {
-          const card = document.createElement('div');
-          card.className = "bg-white rounded-2xl p-3.5 shadow-sm border border-slate-200 space-y-2";
-
-          const renderMembers = (members) => {
-            if (!members || members.length === 0 || members[0] === "예약 없음") {
-              return `<span class="text-xs text-slate-400 font-medium">예약 없음</span>`;
-            }
-            return members.map(m => `
-              <span class="inline-block bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold px-2 py-0.5 rounded-md">
-                ${m}
-              </span>
-            `).join(' ');
-          };
-
-          card.innerHTML = `
-            <div class="flex items-center justify-between border-b border-slate-100 pb-2">
-              <span class="font-bold text-sm text-slate-800 flex items-center gap-1.5">
-                <i class="fa-regular fa-clock text-emerald-600"></i> ${slot.time}
-              </span>
-            </div>
-            
-            <div class="grid grid-cols-2 gap-2 pt-0.5">
-              <div class="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-                <div class="text-[11px] font-bold text-slate-500 mb-1 flex items-center gap-1">
-                  <span class="w-2 h-2 rounded-full bg-indigo-500"></span> 1번 타석
-                </div>
-                <div class="flex flex-wrap gap-1">
-                  ${renderMembers(slot.court1)}
-                </div>
-              </div>
-
-              <div class="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-                <div class="text-[11px] font-bold text-slate-500 mb-1 flex items-center gap-1">
-                  <span class="w-2 h-2 rounded-full bg-emerald-500"></span> 2번 타석
-                </div>
-                <div class="flex flex-wrap gap-1">
-                  ${renderMembers(slot.court2)}
-                </div>
-              </div>
-            </div>
-          `;
-          container.appendChild(card);
-        });
-
-      } catch (error) {
-        console.error("골프 명단 불러오기 실패:", error);
-        container.innerHTML = `
-          <div class="bg-rose-50 border border-rose-200 rounded-2xl p-6 text-center text-rose-700">
-            <i class="fa-solid fa-circle-exclamation text-3xl mb-2 text-rose-500"></i>
-            <p class="text-xs font-bold">명단을 불러오지 못했습니다.</p>
-            <p class="text-[11px] text-rose-500 mt-1">백엔드 서버 상태 또는 네트워크를 확인해주세요.</p>
-          </div>
-        `;
-      }
+      return;
     }
+
+    dateBadge.innerText = `조회 날짜: ${result.date || '날짜 미지정'}`;
+
+    if (!result.data || result.data.length === 0) {
+      container.innerHTML = `
+        <div class="bg-white rounded-2xl p-6 text-center text-slate-400 border border-slate-200">
+          <i class="fa-solid fa-calendar-xmark text-3xl mb-2 text-slate-300"></i>
+          <p class="text-sm font-semibold">예약된 명단이 없습니다.</p>
+        </div>
+      `;
+      return;
+    }
+
+    container.innerHTML = "";
+    
+    result.data.forEach(slot => {
+      const card = document.createElement('div');
+      card.className = "bg-white rounded-2xl p-3.5 shadow-sm border border-slate-200 space-y-2";
+
+      const renderMembers = (members) => {
+        if (!members || members.length === 0 || members[0] === "예약 없음") {
+          return `<span class="text-xs text-slate-400 font-medium">예약 없음</span>`;
+        }
+        return members.map(m => `
+          <span class="inline-block bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold px-2 py-0.5 rounded-md">
+            ${m}
+          </span>
+        `).join(' ');
+      };
+
+      card.innerHTML = `
+        <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+          <span class="font-bold text-sm text-slate-800 flex items-center gap-1.5">
+            <i class="fa-regular fa-clock text-emerald-600"></i> ${slot.time}
+          </span>
+        </div>
+        
+        <div class="grid grid-cols-2 gap-2 pt-0.5">
+          <div class="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+            <div class="text-[11px] font-bold text-slate-500 mb-1 flex items-center gap-1">
+              <span class="w-2 h-2 rounded-full bg-indigo-500"></span> 1번 타석
+            </div>
+            <div class="flex flex-wrap gap-1">
+              ${renderMembers(slot.court1)}
+            </div>
+          </div>
+
+          <div class="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+            <div class="text-[11px] font-bold text-slate-500 mb-1 flex items-center gap-1">
+              <span class="w-2 h-2 rounded-full bg-emerald-500"></span> 2번 타석
+            </div>
+            <div class="flex flex-wrap gap-1">
+              ${renderMembers(slot.court2)}
+            </div>
+          </div>
+        </div>
+      `;
+      container.appendChild(card);
+    });
+
+  } catch (error) {
+    console.error("골프 명단 불러오기 실패:", error);
+    dateBadge.innerText = "통신 에러";
+    container.innerHTML = `
+      <div class="bg-rose-50 border border-rose-200 rounded-2xl p-6 text-center text-rose-700">
+        <i class="fa-solid fa-circle-exclamation text-3xl mb-2 text-rose-500"></i>
+        <p class="text-xs font-bold">명단을 불러오지 못했습니다.</p>
+        <p class="text-[11px] text-rose-500 mt-1">GAS 웹 앱 응답에 실패했습니다.</p>
+      </div>
+    `;
+  }
+}
   </script>
 </body>
 </html>
