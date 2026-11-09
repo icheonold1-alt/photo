@@ -40,10 +40,18 @@
         </div>
       </div>
       
-      <!-- Menu Button -->
-      <button id="open-menu-btn" class="bg-indigo-800 hover:bg-indigo-900 border border-indigo-500 text-white text-xs font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition">
-        <i class="fa-solid fa-bars"></i> 메뉴
-      </button>
+      <!-- Header Action Buttons -->
+      <div class="flex items-center gap-1.5">
+        <!-- ⛳ 골프 예약 조회 버튼 -->
+        <button id="open-golf-btn" onclick="openGolfModal()" class="bg-emerald-600 hover:bg-emerald-700 border border-emerald-500 text-white text-xs font-bold px-2.5 py-1.5 rounded-xl flex items-center gap-1 transition shadow-sm">
+          <i class="fa-solid fa-flag-checkered"></i> 골프 예약
+        </button>
+
+        <!-- Menu Button -->
+        <button id="open-menu-btn" class="bg-indigo-800 hover:bg-indigo-900 border border-indigo-500 text-white text-xs font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition">
+          <i class="fa-solid fa-bars"></i> 메뉴
+        </button>
+      </div>
     </div>
 
     <!-- Archive Banner -->
@@ -221,6 +229,37 @@
     </div>
   </div>
 
+  <!-- Modal 4: 스크린 파크골프 예약 명단 조회 팝업 -->
+  <div id="golf-modal" class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 hidden backdrop-blur-xs">
+    <div class="bg-white rounded-3xl w-full max-w-md max-h-[85vh] overflow-hidden shadow-2xl flex flex-col">
+      <!-- Modal Header -->
+      <div class="p-4 bg-emerald-700 text-white flex justify-between items-center shadow-sm">
+        <div>
+          <h3 class="font-bold text-base flex items-center gap-2">
+            <i class="fa-solid fa-golf-ball-tee"></i> 스크린파크골프 예약 명단
+          </h3>
+          <p id="golf-date-badge" class="text-[11px] text-emerald-200 mt-0.5">날짜 로딩 중...</p>
+        </div>
+        <div class="flex items-center gap-1">
+          <button onclick="fetchGolfReservations()" class="bg-emerald-800 hover:bg-emerald-900 text-white text-xs p-2 rounded-xl transition" title="새로고침">
+            <i class="fa-solid fa-rotate"></i>
+          </button>
+          <button onclick="closeGolfModal()" class="text-white/80 hover:text-white text-lg p-1 ml-1">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+      </div>
+      
+      <!-- Modal Body (명단 표시 영역) -->
+      <div id="golf-list-container" class="p-4 space-y-3 overflow-y-auto max-h-[calc(85vh-70px)] bg-slate-50">
+        <div class="text-center py-8 text-slate-400 text-sm">
+          <i class="fa-solid fa-spinner fa-spin text-2xl mb-2 text-emerald-600"></i>
+          <p>명단을 불러오는 중입니다...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script>
     const GAS_URL = "https://script.google.com/macros/s/AKfycbwvv2tJ-uG_u4y8aEE54HSEA-W1m78jS_1oPiP3OKONsGGt4-lvKLj1_hvhi2u6_2RUiA/exec";
 
@@ -300,8 +339,6 @@
       { id: "P073", location: "지하1층작은마당", day: "금", time: "14:00~15:00", name: "퓨전난타(중급)" },
       { id: "P074", location: "지하1층작은마당", day: "금", time: "15:00~17:00", name: "난타공연반" },
 
-      // ICT지식마루 (1층) - 드라이브에는 주차 폴더 없이 "월 폴더 > ICT지식마루" 에 저장됨 (driveFolder)
-      // 같은 날 같은 이름이 겹치는 수업(스마트폰 기초/활용)은 파일명이 겹치지 않도록 시간을 붙임
       { id: "P075", location: "ICT지식마루", day: "월", time: "10:00~12:00", name: "스마트폰(기초)오전", driveFolder: "ICT지식마루" },
       { id: "P076", location: "ICT지식마루", day: "월", time: "13:00~15:00", name: "스마트폰(기초)오후", driveFolder: "ICT지식마루" },
       { id: "P077", location: "ICT지식마루", day: "화", time: "10:00~12:00", name: "스마트폰(활용)오전", driveFolder: "ICT지식마루" },
@@ -376,8 +413,6 @@
       return `${targetDate.getMonth() + 1}.${String(targetDate.getDate()).padStart(2, '0')}`;
     }
 
-    // 파일명에는 연도가 없으므로 오늘 기준 가장 가까운 연도로 추정
-    // (오늘보다 45일 넘게 미래면 작년 날짜로 봄. 예: 1월에 보이는 12.30 → 작년)
     function inferDateFromMD(month, day) {
       const now = new Date();
       let d = new Date(now.getFullYear(), month - 1, day);
@@ -419,14 +454,12 @@
       return parseInt(getMonthWeekKey(date).split('-W')[1], 10);
     }
 
-    // 해당 월의 (월~금 수업이 있는) 마지막 주차 번호
     function getWeeksInMonth(year, month) {
       const d = new Date(year, month, 0);
       while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() - 1);
       return getWeekOfDate(d);
     }
 
-    // 파일명 → 수업 매칭 (이름이 같은 수업은 날짜의 요일로 구분)
     const matchCache = new Map();
     function matchProgram(fileName) {
       if (matchCache.has(fileName)) return matchCache.get(fileName);
@@ -466,7 +499,6 @@
       db = e.target.result;
       await checkAndAutoArchiveWeekly();
 
-      // 지난번에 받아둔 드라이브 목록으로 화면을 먼저 즉시 그린다
       const savedList = await getMetaDB("remoteList");
       const savedPending = await getMetaDB("pendingDeletes");
       if (savedPending && savedPending.value) pendingDeletes = savedPending.value;
@@ -476,7 +508,6 @@
       await renderApp();
       scrollToCurrentTimeSlot();
 
-      // 최신 목록은 뒤에서 받아오고, 끝나면 화면만 다시 그린다
       await fetchRemoteDrivePhotos();
       renderApp();
     };
@@ -506,10 +537,8 @@
       document.getElementById('current-week-badge').innerText = formatWeekTitle(realCurrentWeekKey);
     }
 
-    // 방금 삭제한 사진은 드라이브 목록에 잠깐 더 남아 있어도 다시 살리지 않는다
-    // (드라이브 삭제 반영에 시간이 걸리거나, 삭제 전에 시작된 동기화가 옛 목록을 가져오는 경우 대비)
     const DELETE_GRACE_MS = 2 * 60 * 1000;
-    let pendingDeletes = {};   // { 파일명: 삭제 시각(ms) }
+    let pendingDeletes = {};
 
     function savePendingDeletes() {
       putDB("meta", { key: "pendingDeletes", value: pendingDeletes });
@@ -525,7 +554,6 @@
       savePendingDeletes();
     }
 
-    // 드라이브 목록에서 삭제 예정 파일을 걸러내고, 드라이브에서 사라졌거나 시간이 지난 항목은 정리
     function applyPendingDeletes(fileList) {
       const names = Object.keys(pendingDeletes);
       if (names.length === 0) return fileList;
@@ -541,8 +569,6 @@
       return hide.size ? fileList.filter(f => !hide.has(f.name)) : fileList;
     }
 
-    // 드라이브 삭제 요청은 한 장씩 차례로 보내고, 응답을 확인해서 실패하면 다시 시도한다
-    // (여러 장을 연달아 지울 때 요청이 동시에 몰려 일부가 반영되지 않는 문제 방지)
     const deleteQueue = [];
     const queuedDeleteNames = new Set();
     let deleteRunning = false;
@@ -581,13 +607,12 @@
         queuedDeleteNames.delete(name);
         if (!ok) {
           failedCount++;
-          removePendingDelete(name);   // 드라이브에 그대로 남아 있으므로 다음 동기화 때 다시 표시됨
+          removePendingDelete(name);
         }
       }
       deleteRunning = false;
       showToast(failedCount ? `${failedCount}장은 삭제하지 못했어요. 다시 표시됩니다` : "드라이브 삭제 완료!", false, 4000);
 
-      // 전부 끝난 뒤 넉넉히 기다렸다가 최신 목록으로 정정
       clearTimeout(resyncTimer);
       resyncTimer = setTimeout(() => fetchRemoteDrivePhotos().then(renderApp), failedCount ? 500 : 5000);
     }
@@ -612,7 +637,7 @@
         const fileList = applyPendingDeletes(rawList);
 
         setRemoteFileList(fileList);
-        putDB("meta", { key: "remoteList", value: fileList });   // 다음 실행 때 즉시 표시용
+        putDB("meta", { key: "remoteList", value: fileList });
 
         const realCurrentWeekKey = getMonthWeekKey();
         const [curPhotos, archPhotos] = await Promise.all([getAllDB("photos"), getAllDB("archive_photos")]);
@@ -732,7 +757,6 @@
       });
     }
 
-    // 사진 목록은 메모리에 캐시해서 화면을 다시 그릴 때마다 DB에서 통째로 읽지 않는다
     const dbCache = {};
     const CACHED_STORES = ["photos", "archive_photos"];
 
@@ -802,7 +826,6 @@
       });
     }
 
-    // 드라이브 목록에서 수업별 월간 촬영 횟수 (목록/월이 바뀔 때만 다시 계산)
     let monthlyCountCache = { key: null, map: null };
     function getMonthlyCountMap(viewingMonthKey) {
       const cacheKey = `${remoteVersion}|${viewingMonthKey}`;
@@ -818,7 +841,6 @@
       return map;
     }
 
-    // 드라이브 사진은 카드에서 작은 크기로, 크게 보기에서만 원본으로
     function thumbUrl(url) {
       return (url && url.startsWith("https://lh3.googleusercontent.com/d/") && !url.includes("=")) ? url + "=w640" : url;
     }
@@ -834,7 +856,7 @@
 
       const activeStore = isArchiveView ? "archive_photos" : "photos";
       const photosList = await getAllDB(activeStore);
-      if (mySeq !== renderSeq) return;   // 더 최신 렌더가 이미 시작됨
+      if (mySeq !== renderSeq) return;
 
       const photoMap = new Map();
       photosList.forEach(item => {
@@ -848,7 +870,6 @@
       });
 
       const now = new Date();
-      // 지금 보고 있는 주차가 속한 달 기준으로 집계 (달이 바뀌면 새로 0부터)
       const viewing = parseWeekKey(currentViewingWeek);
       const currentMonthNum = viewing.month;
       const viewingMonthKey = `${viewing.year}-${viewing.month}`;
@@ -1017,7 +1038,6 @@
       const activeStore = isArchiveView ? "archive_photos" : "photos";
       const photos = await getAllDB(activeStore);
       
-      // 📌 선택된 주차에 정확히 대응하는 사진 검색 로직 수정
       const photoData = photos.find(p => isArchiveView 
         ? (p.archiveWeek === currentViewingWeek && (p.originalId === id || p.id === `${currentViewingWeek}_${id}`))
         : p.id === id
@@ -1045,9 +1065,8 @@
       deleteBtn.onclick = async () => {
         if (confirm('구글 드라이브 및 스마트폰에서 이 사진을 완전 삭제하시겠습니까?')) {
           const targetName = photoData.fileName || itemInfo.name;
-          addPendingDelete(targetName);   // 가장 먼저 표시: 진행 중이던 동기화가 이 사진을 다시 살리지 못하게
+          addPendingDelete(targetName);
 
-          // 화면부터 즉시 갱신 (기기 저장분 + 월 집계 목록에서 먼저 제거)
           if (isArchiveView) {
             await deleteDB("archive_photos", photoData.id);
           } else {
@@ -1058,7 +1077,7 @@
           renderApp();
           showToast("구글 드라이브 사진 삭제 중...");
 
-          enqueueDelete(targetName, itemInfo.driveFolder || "");   // 차례대로 전송 + 실패 시 재시도
+          enqueueDelete(targetName, itemInfo.driveFolder || "");
         }
       };
 
@@ -1101,7 +1120,7 @@
     async function handleFileSelected(file) {
       if (!file || !activeTargetId) return;
       const targetId = activeTargetId;
-      activeTargetId = null;   // 업로드가 끝나기 전에 다른 수업을 바로 이어서 등록할 수 있게 즉시 해제
+      activeTargetId = null;
       const info = rawData.find(r => r.id === targetId);
       if (!info) return;
 
@@ -1135,9 +1154,8 @@
         await putDB("photos", { id: targetId, dataUrl: compressedDataUrl, dateStr, fileName, weekKey: getMonthWeekKey() });
       }
 
-      if (pendingDeletes[fileName]) removePendingDelete(fileName);   // 지웠던 사진을 같은 이름으로 다시 올린 경우
+      if (pendingDeletes[fileName]) removePendingDelete(fileName);
 
-      // 월 집계에도 바로 반영 (같은 이름이면 다시 세지 않음) → 화면 즉시 갱신
       if (!remoteFileListCache.some(f => f.name === fileName)) {
         setRemoteFileList([...remoteFileListCache, { name: fileName, id: "", folder: "" }]);
       }
@@ -1156,7 +1174,6 @@
         console.warn("드라이브 전송 완료:", err);
       }
 
-      // 전송이 끝난 뒤 최신 목록으로 정정 (화면은 이미 갱신돼 있으므로 기다리지 않음)
       fetchRemoteDrivePhotos().then(renderApp);
     }
 
@@ -1222,14 +1239,11 @@
       });
     });
 
-    // 열었을 때: 오늘 요일 탭 선택 (주말이면 전체)
     function initDefaultDayTab() {
       const today = ['일', '월', '화', '수', '목', '금', '토'][new Date().getDay()];
       setActiveDayTab(['월', '화', '수', '목', '금'].includes(today) ? today : '전체');
     }
 
-    // 열었을 때: 지금 시간대 수업이 화면 맨 위에 오도록 스크롤 (지난 시간대는 위로 스크롤하면 그대로 있음)
-    // 기준: 이미 시작했거나 10분 안에 시작하는 시간대 중 가장 늦은 것
     function scrollToCurrentTimeSlot() {
       if (activeDay === "전체" || isArchiveView) return;
       const cards = [...document.querySelectorAll('#cards-container > div[data-start]')];
@@ -1275,7 +1289,6 @@
       showToast(`${month}월 사진 목록 확인 중...`, true, 60000);
       await fetchRemoteDrivePhotos();
 
-      // 드라이브에 있는 해당 월 사진 (파일명 기준 중복 제거)
       const targets = new Map();
       remoteFileListCache.forEach(f => {
         const d = parseFileDate(f.name);
@@ -1289,7 +1302,6 @@
         return;
       }
 
-      // 이 기기에서 방금 찍은 사진은 이미 갖고 있으므로 재다운로드 생략
       const [curPhotos, archPhotos] = await Promise.all([getAllDB("photos"), getAllDB("archive_photos")]);
       const localByName = new Map();
       [...curPhotos, ...archPhotos].forEach(p => {
@@ -1304,7 +1316,6 @@
           if (!r.ok) throw new Error("HTTP " + r.status);
           return { data: await r.blob(), options: {} };
         } catch (e1) {
-          // 예비 경로: Apps Script 로 받기
           const r2 = await fetch(`${GAS_URL}?action=getFile&id=${encodeURIComponent(t.driveId)}`);
           const j = await r2.json();
           if (!j.base64) throw new Error(j.error || "getFile 실패");
@@ -1349,6 +1360,108 @@
 
     document.getElementById('zip-this-month-btn').addEventListener('click', () => downloadMonthZip('this'));
     document.getElementById('zip-last-month-btn').addEventListener('click', () => downloadMonthZip('last'));
+
+    // ==========================================
+    // ⛳ 스크린 파크골프 예약 명단 조회 관련 로직
+    // ==========================================
+    // 백엔드 URL (Render 배포 후 본인 API 주소로 변경: 예: https://xxx.onrender.com/api/reservations)
+    const GOLF_API_URL = "http://127.0.0.1:8000/api/reservations"; 
+
+    function openGolfModal() {
+      document.getElementById('golf-modal').classList.remove('hidden');
+      fetchGolfReservations();
+    }
+
+    function closeGolfModal() {
+      document.getElementById('golf-modal').classList.add('hidden');
+    }
+
+    async function fetchGolfReservations() {
+      const container = document.getElementById('golf-list-container');
+      const dateBadge = document.getElementById('golf-date-badge');
+      
+      container.innerHTML = `
+        <div class="text-center py-8 text-slate-400 text-sm">
+          <i class="fa-solid fa-spinner fa-spin text-2xl mb-2 text-emerald-600"></i>
+          <p>엔컴 서버에서 예약 명단을 불러오는 중...</p>
+        </div>
+      `;
+
+      try {
+        const response = await fetch(GOLF_API_URL);
+        if (!response.ok) throw new Error("서버 응답 에러");
+        
+        const result = await response.json();
+        dateBadge.innerText = `조회 날짜: ${result.date}`;
+
+        if (!result.data || result.data.length === 0) {
+          container.innerHTML = `
+            <div class="bg-white rounded-2xl p-6 text-center text-slate-400 border border-slate-200">
+              <i class="fa-solid fa-calendar-xmark text-3xl mb-2 text-slate-300"></i>
+              <p class="text-sm font-semibold">예약된 명단이 없습니다.</p>
+            </div>
+          `;
+          return;
+        }
+
+        container.innerHTML = "";
+        
+        result.data.forEach(slot => {
+          const card = document.createElement('div');
+          card.className = "bg-white rounded-2xl p-3.5 shadow-sm border border-slate-200 space-y-2";
+
+          const renderMembers = (members) => {
+            if (!members || members.length === 0 || members[0] === "예약 없음") {
+              return `<span class="text-xs text-slate-400 font-medium">예약 없음</span>`;
+            }
+            return members.map(m => `
+              <span class="inline-block bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold px-2 py-0.5 rounded-md">
+                ${m}
+              </span>
+            `).join(' ');
+          };
+
+          card.innerHTML = `
+            <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+              <span class="font-bold text-sm text-slate-800 flex items-center gap-1.5">
+                <i class="fa-regular fa-clock text-emerald-600"></i> ${slot.time}
+              </span>
+            </div>
+            
+            <div class="grid grid-cols-2 gap-2 pt-0.5">
+              <div class="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                <div class="text-[11px] font-bold text-slate-500 mb-1 flex items-center gap-1">
+                  <span class="w-2 h-2 rounded-full bg-indigo-500"></span> 1번 타석
+                </div>
+                <div class="flex flex-wrap gap-1">
+                  ${renderMembers(slot.court1)}
+                </div>
+              </div>
+
+              <div class="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                <div class="text-[11px] font-bold text-slate-500 mb-1 flex items-center gap-1">
+                  <span class="w-2 h-2 rounded-full bg-emerald-500"></span> 2번 타석
+                </div>
+                <div class="flex flex-wrap gap-1">
+                  ${renderMembers(slot.court2)}
+                </div>
+              </div>
+            </div>
+          `;
+          container.appendChild(card);
+        });
+
+      } catch (error) {
+        console.error("골프 명단 불러오기 실패:", error);
+        container.innerHTML = `
+          <div class="bg-rose-50 border border-rose-200 rounded-2xl p-6 text-center text-rose-700">
+            <i class="fa-solid fa-circle-exclamation text-3xl mb-2 text-rose-500"></i>
+            <p class="text-xs font-bold">명단을 불러오지 못했습니다.</p>
+            <p class="text-[11px] text-rose-500 mt-1">백엔드 서버 상태 또는 네트워크를 확인해주세요.</p>
+          </div>
+        `;
+      }
+    }
   </script>
 </body>
 </html>
